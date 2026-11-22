@@ -238,7 +238,11 @@ class SpatialScanActivity : Activity(), GLSurfaceView.Renderer {
         try {
             val frame = activeSession.update()
             val transformedUv = floatBuffer(FloatArray(8))
+            // Rewind buffers because ARCore advances their positions while transforming UVs.
+            rawUv.position(0)
+            transformedUv.position(0)
             frame.transformDisplayUvCoords(rawUv, transformedUv)
+            transformedUv.position(0)
             drawCamera(transformedUv)
             collectFrame(frame)
             val now = System.currentTimeMillis()
