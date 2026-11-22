@@ -147,7 +147,7 @@ class MainActivity : Activity(), SensorEventListener {
             setOnClickListener { startActivity(Intent(this@MainActivity, RoomSetupActivity::class.java)) }
         }
         val displayButton = Button(this).apply {
-            text = "Запустить VR-экран с ПК"
+            text = "Тестовый экран ПК (моно)"
             isAllCaps = false
             textSize = 15f
             setTextColor(Color.WHITE)
