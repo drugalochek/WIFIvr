@@ -571,6 +571,15 @@ internal sealed class DashboardForm : Form
                                         worldPoints.ValueKind == JsonValueKind.Array &&
                                         worldPoints.GetArrayLength() != 0 && worldPoints.GetArrayLength() != 21)
                                         throw new InvalidDataException("worldLandmarks должны содержать 21 точку или быть пустыми");
+                                    if (!hand.TryGetProperty("rootPosition", out var rootPosition) ||
+                                        rootPosition.ValueKind != JsonValueKind.Object)
+                                        throw new InvalidDataException("Для v2 требуется rootPosition");
+                                    foreach (var axis in new[] { "x", "y", "z" })
+                                    {
+                                        var value = Finite(rootPosition, axis);
+                                        if (Math.Abs(value) > 3f)
+                                            throw new InvalidDataException("rootPosition вне допустимого диапазона ±3 м");
+                                    }
                                 }
                                 if (points.ValueKind != JsonValueKind.Array || points.GetArrayLength() != 21)
                                     throw new InvalidDataException("Ожидалось 21 точка на руку");
