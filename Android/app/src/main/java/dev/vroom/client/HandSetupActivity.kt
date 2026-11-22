@@ -227,7 +227,7 @@ class HandSetupActivity : ComponentActivity() {
                     viewFovDegrees = 60 + progress
                     getSharedPreferences("vroom_settings", MODE_PRIVATE).edit().putInt("fov_degrees", viewFovDegrees).apply()
                     fovLabel.text = "FOV: $viewFovDegrees°"
-                    overlay.invalidate()
+                    overlay.setFovDegrees(viewFovDegrees)
                 }
                 override fun onStartTrackingTouch(seekBar: SeekBar?) = Unit
                 override fun onStopTrackingTouch(seekBar: SeekBar?) = Unit
@@ -474,7 +474,9 @@ private class HandOverlayView(context: android.content.Context) : View(context) 
     @Volatile private var handPoints: List<List<Pair<Float, Float>>> = emptyList()
     @Volatile private var cameraFrame: Bitmap? = null
     @Volatile private var stereoMode = false
+    @Volatile private var fovDegrees = 90
 
+    fun setFovDegrees(value: Int) { fovDegrees = value.coerceIn(60, 110); postInvalidate() }
     fun updateFrame(bitmap: Bitmap) { cameraFrame = bitmap; postInvalidate() }
     fun updateHands(value: List<List<Pair<Float, Float>>>) { handPoints = value; postInvalidate() }
     fun setStereoMode(enabled: Boolean) { stereoMode = enabled; postInvalidate() }
@@ -509,7 +511,7 @@ private class HandOverlayView(context: android.content.Context) : View(context) 
             val top = (frame.height - cropHeight) / 2
             Rect(0, top, frame.width, top + cropHeight)
         }
-        val fovScale = 90f / viewFovDegrees.coerceIn(60, 110).toFloat()
+        val fovScale = 90f / fovDegrees.coerceIn(60, 110).toFloat()
         val scaledWidth = destination.width() * fovScale
         val scaledHeight = destination.height() * fovScale
         val fovDestination = RectF(
