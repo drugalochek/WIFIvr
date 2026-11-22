@@ -18,7 +18,7 @@
 
 ## What is not implemented yet
 
-- Calibrated room-space hand poses and validated rendered articulated hand meshes. The driver submits 31-bone parent-space skeletal transforms, but MediaPipe world landmarks are hand-centred estimates and cannot locate a hand in the VR room. OpenVR hand endpoints are currently controller-class tracked devices because that is the available SteamVR skeletal-input path; they do not publish a valid controller pose or synthesize trigger/grip buttons.
+- Calibrated room-space hand poses and validated rendered articulated hand meshes. The current tracked hand root is only a monocular palm-width estimate with a nominal 85 mm scale and assumed camera focal length. It is not a measured 6DoF hand pose. OpenVR hand endpoints are controller-class tracked devices because that is the available SteamVR skeletal-input path; they do not synthesize trigger/grip buttons.
 - Calibrated 3D body/hand tracking. MoveNet output from one PC webcam is 2D image-space keypoints only.
 - Reliable 6DoF head position. The phone IMU supplies orientation, not absolute position.
 - Working arm-swing or walk-in-place locomotion injected into SteamVR.
@@ -37,7 +37,7 @@ The Windows host receives UDP telemetry on port 9000 and length-prefixed JPEG st
 - TCP 9001 — JPEG camera frames from the Android phone, each prefixed by a 4-byte big-endian frame length.
 - TCP 9002 — side-by-side SteamVR compositor frames relayed from the Windows host to Android.
 - TCP 9004 — local loopback stream from the OpenVR driver's compositor-frame capture to the Windows host.
-- UDP 9005 — local loopback hand-pose relay from the Windows host to the OpenVR driver. For v2, Windows forwards the complete packet; the driver consumes handedness, confidence, and 21 MediaPipe world landmarks per hand. Legacy v1 packets remain accepted by Windows but do not produce a skeletal pose.
+- UDP 9005 — local loopback hand-pose relay from the Windows host to the OpenVR driver. For v2, Windows forwards the complete packet; the driver consumes handedness, confidence, 21 MediaPipe world landmarks, and an estimated HMD-local wrist root per hand. Legacy v1 packets remain accepted by Windows but do not produce a skeletal pose.
 
 The phone clamps normalized hand x/y coordinates to [0, 1]. Landmark z is relative model depth and may be negative. Windows visualizes image-space hand landmarks. MediaPipe world landmarks remain hand-centred. `rootPosition` is a rough HMD-local wrist estimate inferred from the apparent index-to-pinky MCP span, a nominal 85 mm palm breadth, and an assumed focal scale. It is rotated by the HMD pose and submitted as the tracked hand root. Camera intrinsics, actual palm breadth, camera-to-HMD offset/orientation, and hand-depth accuracy still require calibration; expect positional error until those are measured.
 
