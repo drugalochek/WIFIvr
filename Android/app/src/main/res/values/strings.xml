@@ -1,0 +1,28 @@
+<resources>
+    <string name="app_name">Veyra</string>
+    <string name="tagline">Wireless VR. No cables. Just move.</string>
+    <string name="connection_title">Connect to your PC</string>
+    <string name="connection_hint">Make sure your phone and PC are on the same Wi-Fi network.</string>
+    <string name="pc_address_hint">PC address, e.g. 192.168.1.10</string>
+    <string name="connect">Connect</string>
+    <string name="disconnect">Disconnect</string>
+    <string name="no_rotation_sensor">This phone has no rotation-vector sensor.</string>
+    <string name="ready_to_connect">Ready. Enter your PC's local IP address.</string>
+    <string name="invalid_pc_address">Enter a valid PC address.</string>
+    <string name="socket_error">Could not open network socket: %1$s</string>
+    <string name="streaming_to">Sending head tracking data to %1$s:9000</string>
+    <string name="disconnected">Disconnected.</string>
+    <string name="hand_tracking">Set up hand tracking</string>
+    <string name="hand_tracking_title">Hand tracking setup</string>
+    <string name="camera_starting">Starting camera…</string>
+    <string name="camera_permission_needed">Camera access is needed to track your hands.</string>
+    <string name="hands_not_found">No hands detected. Show your hands to the rear camera.</string>
+    <string name="wrist_coordinates">Wrist position: x %.2f · y %.2f · z %.2f</string>
+    <string name="coordinates_unavailable">Coordinates unavailable</string>
+    <string name="hands_found">Hands detected: %1$d\n%2$s</string>
+    <string name="hand_tracking_error">Hand tracking error: %1$s</string>
+    <string name="model_load_error">Could not load hand model: %1$s</string>
+    <string name="back_camera_active">Rear camera active · show up to two hands</string>
+    <string name="camera_start_error">Could not start camera: %1$s</string>
+    <string name="camera_frame_error">Camera frame error: %1$s</string>
+</resources>
