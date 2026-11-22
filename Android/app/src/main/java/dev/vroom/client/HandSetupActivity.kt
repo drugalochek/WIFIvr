@@ -89,6 +89,7 @@ class HandSetupActivity : ComponentActivity() {
         window.statusBarColor = Color.rgb(11, 16, 32)
         window.navigationBarColor = Color.rgb(11, 16, 32)
         cameraExecutor = Executors.newSingleThreadExecutor()
+        viewFovDegrees = getSharedPreferences("vroom_settings", MODE_PRIVATE).getInt("fov_degrees", 90).coerceIn(60, 110)
         buildScreen()
         val pcAddress = intent.getStringExtra("pc_address")?.trim().orEmpty()
         if (pcAddress.isNotEmpty()) {
@@ -199,11 +200,12 @@ class HandSetupActivity : ComponentActivity() {
         val fovLabel = TextView(this).apply { text = "FOV: 90°"; textSize = 13f; setTextColor(Color.WHITE); setPadding(0, dp(10), 0, dp(2)) }
         val fovSlider = SeekBar(this).apply {
             max = 50
-            progress = 30
+            progress = viewFovDegrees - 60
             contentDescription = "Поле зрения от 60 до 110 градусов"
             setOnSeekBarChangeListener(object : android.widget.SeekBar.OnSeekBarChangeListener {
                 override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
                     viewFovDegrees = 60 + progress
+                    getSharedPreferences("vroom_settings", MODE_PRIVATE).edit().putInt("fov_degrees", viewFovDegrees).apply()
                     fovLabel.text = "FOV: $viewFovDegrees°"
                     overlay.invalidate()
                 }
