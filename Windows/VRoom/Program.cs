@@ -7,6 +7,7 @@ using System.Numerics;
 using System.Text.Json;
 using OpenCvSharp;
 using OpenCvSharp.Extensions;
+using Size = System.Drawing.Size;
 
 namespace VRoom;
 
