@@ -1,5 +1,6 @@
 using System.Buffers.Binary;
 using System.Drawing;
+using System.Drawing.Imaging;
 using System.Windows.Forms;
 using System.Net;
 using System.Net.Sockets;
@@ -42,6 +43,8 @@ internal sealed class DashboardForm : Form
     private Task? _listener;
     private Task? _cameraListener;
     private TcpListener? _tcpListener;
+    private TcpListener? _displayListener;
+    private Task? _displayTask;
     private long _cameraFrames;
     private PointF[][] _handSkeleton = Array.Empty<PointF[]>();
     private PointF[] _bodySkeleton = Array.Empty<PointF>();
@@ -278,10 +281,12 @@ internal sealed class DashboardForm : Form
         {
             _stop.Cancel();
             _tcpListener?.Stop();
+            _displayListener?.Stop();
             _toggle.Enabled = false;
             if (_listener is not null) { try { await _listener; } catch { } }
             if (_cameraListener is not null) { try { await _cameraListener; } catch { } }
-            _stop.Dispose(); _stop = null; _listener = null; _cameraListener = null; _tcpListener = null;
+            if (_displayTask is not null) { try { await _displayTask; } catch { } }
+            _stop.Dispose(); _stop = null; _listener = null; _cameraListener = null; _displayTask = null; _tcpListener = null; _displayListener = null;
             _toggle.Enabled = true; _toggle.Text = "Запустить VRoom";
             _status.Text = "Остановлено";
             _cameraStatus.Text = "Ожидание телефона · TCP 9001";
@@ -292,11 +297,14 @@ internal sealed class DashboardForm : Form
         _stop = new CancellationTokenSource();
         _toggle.Text = "Остановить VRoom";
         _status.Text = "Службы запущены";
-        _endpoint.Text = string.Join(", ", GetLocalAddresses()) + " · UDP 9000 · TCP 9001";
+        _endpoint.Text = string.Join(", ", GetLocalAddresses()) + " · UDP 9000 · TCP 9001/9002";
         _listener = ListenTrackingAsync(_stop.Token);
         _tcpListener = new TcpListener(IPAddress.Any, 9001);
         _cameraListener = ListenCameraAsync(_stop.Token);
-        Log("UDP 9000 и TCP 9001 запущены.");
+        _displayListener = new TcpListener(IPAddress.Any, 9002);
+        _displayListener.Start(1);
+        _displayTask = StreamDesktopPreviewAsync(_stop.Token);
+        Log("UDP 9000, TCP 9001 (камера) и TCP 9002 (экран ПК → телефон) запущены.");
     }
 
     private static string[] GetLocalAddresses() =>
@@ -342,6 +350,55 @@ internal sealed class DashboardForm : Form
         catch (SocketException) when (token.IsCancellationRequested) { }
         catch (ObjectDisposedException) when (token.IsCancellationRequested) { }
         catch (Exception ex) { Log("Ошибка видеопотока: " + ex.Message); }
+    }
+
+    private async Task StreamDesktopPreviewAsync(CancellationToken token)
+    {
+        var listener = _displayListener!;
+        var jpegEncoder = ImageCodecInfo.GetImageEncoders().First(codec => codec.MimeType == "image/jpeg");
+        using var encoderParameters = new EncoderParameters(1);
+        encoderParameters.Param[0] = new EncoderParameter(System.Drawing.Imaging.Encoder.Quality, 52L);
+        try
+        {
+            while (!token.IsCancellationRequested)
+            {
+                using var client = await listener.AcceptTcpClientAsync(token);
+                client.NoDelay = true;
+                Log("Подключён VR-экран телефона: " + client.Client.RemoteEndPoint);
+                try
+                {
+                    using var stream = client.GetStream();
+                    while (!token.IsCancellationRequested)
+                    {
+                        var bounds = Screen.PrimaryScreen?.Bounds ?? Screen.AllScreens[0].Bounds;
+                        using var captured = new Bitmap(bounds.Width, bounds.Height, PixelFormat.Format24bppRgb);
+                        using (var graphics = Graphics.FromImage(captured))
+                            graphics.CopyFromScreen(bounds.Left, bounds.Top, 0, 0, bounds.Size, CopyPixelOperation.SourceCopy);
+                        using var scaled = new Bitmap(1280, 720, PixelFormat.Format24bppRgb);
+                        using (var graphics = Graphics.FromImage(scaled))
+                        {
+                            graphics.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.Bilinear;
+                            graphics.DrawImage(captured, 0, 0, 1280, 720);
+                        }
+                        using var memory = new MemoryStream();
+                        scaled.Save(memory, jpegEncoder, encoderParameters);
+                        var frame = memory.ToArray();
+                        if (frame.Length > 4_000_000) throw new InvalidDataException("Кадр экрана превышает лимит 4 МБ");
+                        var header = new byte[4];
+                        BinaryPrimitives.WriteInt32BigEndian(header, frame.Length);
+                        await stream.WriteAsync(header, token);
+                        await stream.WriteAsync(frame, token);
+                        await Task.Delay(66, token);
+                    }
+                }
+                catch (IOException ex) { Log("VR-экран отключился: " + ex.Message); }
+                catch (SocketException ex) when (!token.IsCancellationRequested) { Log("Сеть VR-экрана: " + ex.Message); }
+            }
+        }
+        catch (OperationCanceledException) when (token.IsCancellationRequested) { }
+        catch (SocketException) when (token.IsCancellationRequested) { }
+        catch (ObjectDisposedException) when (token.IsCancellationRequested) { }
+        catch (Exception ex) { Log("Ошибка передачи экрана: " + ex.Message); }
     }
 
     private static async Task<bool> ReadExactlyAsync(NetworkStream stream, byte[] buffer, CancellationToken token)
