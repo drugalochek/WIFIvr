@@ -184,7 +184,7 @@ class HandSetupActivity : ComponentActivity() {
             try {
                 val ranges = Camera2CameraInfo.from(provider.getCameraInfo(selector))
                     .getCameraCharacteristic(CameraCharacteristics.CONTROL_AE_AVAILABLE_TARGET_FPS_RANGES)
-                val sixty = ranges?.filter { it.lower == 60 && it.upper == 60 }?.firstOrNull()
+                val sixty = ranges?.filter { it.upper == 60 && it.lower <= 60 }?.minByOrNull { it.lower }
                 if (sixty != null) {
                     Camera2Interop.Extender(analysisBuilder)
                         .setCaptureRequestOption(CaptureRequest.CONTROL_AE_TARGET_FPS_RANGE, sixty)
