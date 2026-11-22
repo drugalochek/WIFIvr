@@ -10,6 +10,7 @@
 #include <openvr_driver.h>
 #include <atomic>
 #include <chrono>
+#include <ctime>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
@@ -23,6 +24,30 @@
 #include <thread>
 
 namespace {
+constexpr uint64_t kVRoomUniverseId = 0x56524F4FULL;
+
+// VRoom currently has rotational IMU tracking but no positional tracking.
+// Supply a deterministic standing universe with no fabricated room boundary.
+std::string BuildChaperoneJson() {
+    const std::time_t now = std::time(nullptr);
+    std::tm utc{};
+    gmtime_s(&utc, &now);
+    char timestamp[32]{};
+    std::strftime(timestamp, sizeof(timestamp), "%Y-%m-%dT%H:%M:%SZ", &utc);
+
+    return std::string("{") +
+        "\"json_id\":\"chaperone_info\"," +
+        "\"version\":5," +
+        "\"time\":\"" + timestamp + "\"," +
+        "\"universes\":[{" +
+            "\"collision_bounds\":[]," +
+            "\"play_area\":[0.0,0.0]," +
+            "\"seated\":{\"translation\":[0.0,0.0,0.0],\"yaw\":0.0}," +
+            "\"standing\":{\"translation\":[0.0,0.0,0.0],\"yaw\":0.0}," +
+            "\"universeID\":" + std::to_string(kVRoomUniverseId) +
+        "}]}";
+}
+
 class VRoomProvider;
 
 class VRoomHmd final : public vr::ITrackedDeviceServerDriver,
@@ -101,7 +126,7 @@ public:
         return nullptr;
     }
     void DebugRequest(const char*, char* response, uint32_t size) override {
-        if (response && size) response[0] = '\\0';
+        if (response && size) response[0] = '\0';
     }
     vr::DriverPose_t GetPose() override;
 
@@ -224,9 +249,14 @@ public:
             qy_.load(std::memory_order_relaxed),
             qz_.load(std::memory_order_relaxed)
         };
-        pose.result = hasPose_.load(std::memory_order_acquire)
-            ? vr::TrackingResult_Running_OK : vr::TrackingResult_Uninitialized;
-        pose.poseIsValid = hasPose_.load(std::memory_order_acquire);
+        // IMU-only mode has no positional sensor. Keep a stable standing eye
+        // height and report a valid orientation pose even before the first
+        // phone packet arrives, so SteamVR can initialize its standing universe.
+        pose.vecPosition[0] = 0.0;
+        pose.vecPosition[1] = 1.65;
+        pose.vecPosition[2] = 0.0;
+        pose.result = vr::TrackingResult_Running_OK;
+        pose.poseIsValid = true;
         pose.deviceIsConnected = true;
         pose.willDriftInYaw = true;
         pose.shouldApplyHeadModel = false;
