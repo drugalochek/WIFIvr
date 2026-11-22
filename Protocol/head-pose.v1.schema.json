@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://wifivr.local/protocol/head-pose.v1.schema.json",
+  "title": "WiFi VR head pose packet",
+  "type": "object",
+  "required": ["type", "version", "timestampNs", "orientation"],
+  "properties": {
+    "type": { "const": "head_pose" },
+    "version": { "const": 1 },
+    "timestampNs": { "type": "integer", "minimum": 0 },
+    "orientation": {
+      "type": "object",
+      "required": ["x", "y", "z", "w"],
+      "properties": {
+        "x": { "type": "number" },
+        "y": { "type": "number" },
+        "z": { "type": "number" },
+        "w": { "type": "number" }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}
