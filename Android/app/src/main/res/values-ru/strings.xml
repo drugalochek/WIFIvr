@@ -26,6 +26,7 @@
     <string name="back_camera_active">Задняя камера включена · покажи до двух рук</string>
     <string name="camera_start_error">Не удалось запустить камеру: %1$s</string>
     <string name="camera_frame_error">Ошибка обработки кадра: %1$s</string>
+    <string name="room_saved_profile">Профиль сохранён: %1$s</string>
     <string name="room_title">Твоя игровая зона</string>
     <string name="room_intro">Настройки комнаты сохраняются на этом телефоне. Каждый пользователь может настроить свою игровую зону.</string>
     <string name="ar_checking">Проверяем поддержку пространственного отслеживания…</string>
