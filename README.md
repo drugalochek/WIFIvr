@@ -52,6 +52,17 @@ The phone clamps normalized hand x/y coordinates to [0, 1]. Landmark z is relati
 
 The Windows host listens on UDP 9000, TCP 9001 (phone camera upload), and TCP 9002 (VR display download). The SteamVR driver separately listens on loopback UDP 9003 for head pose and loopback TCP 9004 for compositor-frame relay. Start VRoom Desktop before connecting the phone. Do not expose these ports to the public internet.
 
+## Roblox / OpenXR setup
+
+VRoom's headset and hand devices are currently exposed through the SteamVR **OpenVR driver**. Roblox uses the OpenXR path, so SteamVR must be selected as the active OpenXR runtime on the PC; enabling Roblox's in-game VR toggle alone does not make an OpenVR-only device visible to Roblox.
+
+1. Install and start SteamVR.
+2. In SteamVR, open **Settings → OpenXR** and choose **Set SteamVR as OpenXR Runtime** (the wording can vary by SteamVR version).
+3. Restart SteamVR after installing or updating the VRoom driver. Confirm that SteamVR shows the VRoom HMD as the active headset, not only that the VRoom phone app says it is connected.
+4. Start Roblox only after SteamVR is running, then enable VR in a supported VR experience.
+
+The VRoom controller profile includes a SteamVR remapping layout intended to map common Oculus Touch bindings. This is only a compatibility mapping attempt: Roblox detection, controller actions, and individual experiences still require testing on the target PC. If Roblox remains flat-screen, check that SteamVR is the active OpenXR runtime and that SteamVR itself reports an active HMD.
+
 ## Builds
 
 GitHub Actions publishes:
