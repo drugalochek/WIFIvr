@@ -287,7 +287,7 @@ class VrSessionActivity : Activity(), SensorEventListener {
                     else -> "unknown"
                 }
                 hands.put(JSONObject().put("handedness", side)
-                    .put("confidence", (category.score()).coerceIn(0f, 1f).toDouble())
+                    .put("confidence", (category?.score() ?: 0f).coerceIn(0f, 1f).toDouble())
                     .put("gesture", gesture).put("pinch", pinch.toDouble())
                     .put("landmarks", imagePoints).put("worldLandmarks", worldPoints))
             }
