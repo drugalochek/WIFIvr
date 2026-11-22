@@ -29,8 +29,12 @@ The checkboxes below distinguish implemented code from hardware validation. A fe
 - [x] Relay complete hand-pose v2 packets through Windows to the OpenVR driver
 - [x] Map MediaPipe's 21 hand-centred world landmarks into the 31-bone OpenVR parent-space hierarchy
 - [x] Estimate an initial HMD-local wrist root from apparent palm width and publish a tracked hand pose relative to the HMD
-- [x] Update both `WithController` and `WithoutController` skeletal motion ranges; do not synthesize trigger/grip buttons
+- [x] Update both `WithController` and `WithoutController` skeletal motion ranges
+- [x] Add gesture-derived trigger (thumb-index pinch) and squeeze (closed fist) input components
+- [x] Add an Oculus Touch controller-type remapping layout for common OpenXR/SteamVR binding compatibility
 - [ ] Compile and validate the skeletal driver against the target SteamVR runtime
+- [ ] Verify Roblox detects VRoom as a VR HMD and accepts the mapped hand poses and gesture inputs
+- [ ] Add a comfortable locomotion input (thumbstick equivalent) and menu/secondary actions without requiring a physical controller
 - [ ] Verify bone orientation, handedness, and articulated hand rendering in a SteamVR skeletal-input test application
 - [ ] Replace the nominal palm-width/focal-scale root estimate with measured camera intrinsics and per-user palm calibration
 - [ ] Calibrate camera-to-HMD position/orientation and verify left/right coordinate axes in the headset
