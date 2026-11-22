@@ -4,6 +4,7 @@
 #include <array>
 #include <atomic>
 #include <cmath>
+#include <algorithm>
 #include <chrono>
 #include <cstdint>
 #include <mutex>
@@ -37,9 +38,22 @@ public:
             return vr::VRInitError_Driver_Unknown;
         }
 
+        // Gesture-derived controls for controller-oriented VR titles:
+        // pinch drives the analog trigger; a closed fist drives squeeze.
+        if (input->CreateScalarComponent(container, "/input/trigger/value", &triggerValue_,
+                vr::VRScalarType_Absolute, vr::VRScalarUnits_NormalizedOneSided) != vr::VRInputError_None ||
+            input->CreateBooleanComponent(container, "/input/trigger/click", &triggerClick_) != vr::VRInputError_None ||
+            input->CreateScalarComponent(container, "/input/squeeze/value", &squeezeValue_,
+                vr::VRScalarType_Absolute, vr::VRScalarUnits_NormalizedOneSided) != vr::VRInputError_None ||
+            input->CreateBooleanComponent(container, "/input/squeeze/click", &squeezeClick_) != vr::VRInputError_None) {
+            vr::VRDriverLog()->Log("VRoom: failed to create gesture-derived controller input components");
+            objectId_ = vr::k_unTrackedDeviceIndexInvalid;
+            return vr::VRInitError_Driver_Unknown;
+        }
+
         vr::VRDriverLog()->Log(isLeft
-            ? "VRoom: left skeletal hand registered; no trigger/grip emulation; approximate HMD-relative root; camera calibration still required"
-            : "VRoom: right skeletal hand registered; no trigger/grip emulation; approximate HMD-relative root; camera calibration still required");
+            ? "VRoom: left skeletal hand registered; pinch=trigger, fist=squeeze; approximate HMD-relative root; calibration required"
+            : "VRoom: right skeletal hand registered; pinch=trigger, fist=squeeze; approximate HMD-relative root; calibration required");
         return vr::VRInitError_None;
     }
 
@@ -57,7 +71,7 @@ public:
     // rootPositionHead is an approximate wrist position in HMD-local OpenVR metres.
     // It is estimated from palm width and the phone camera image, not a calibrated depth sensor.
     void SetHandPose(const std::array<std::array<float, 3>, 21>& points, float confidence,
-                     const std::array<float, 3>& rootPositionHead) {
+                     const std::array<float, 3>& rootPositionHead, float pinch, bool fist) {
         if (!std::isfinite(confidence) || confidence < 0.35f) {
             ClearSkeleton();
             return;
@@ -74,6 +88,14 @@ public:
                 return;
             }
         }
+        if (!std::isfinite(pinch)) {
+            ClearSkeleton();
+            return;
+        }
+        triggerValueState_.store(std::clamp(pinch, 0.0f, 1.0f), std::memory_order_release);
+        triggerClickState_.store(pinch >= 0.75f, std::memory_order_release);
+        squeezeValueState_.store(fist ? 1.0f : 0.0f, std::memory_order_release);
+        squeezeClickState_.store(fist, std::memory_order_release);
 
         std::array<vr::VRBoneTransform_t, 31> bones{};
         for (auto& bone : bones) {
@@ -123,6 +145,10 @@ public:
 
     void ClearSkeleton() {
         hasSkeleton_.store(false, std::memory_order_release);
+        triggerValueState_.store(0.0f, std::memory_order_release);
+        triggerClickState_.store(false, std::memory_order_release);
+        squeezeValueState_.store(0.0f, std::memory_order_release);
+        squeezeClickState_.store(false, std::memory_order_release);
         lastUpdateMs_.store(NowMs(), std::memory_order_release);
     }
 
@@ -150,6 +176,15 @@ public:
             snapshot.data(), static_cast<uint32_t>(snapshot.size()));
         input->UpdateSkeletonComponent(skeleton_, vr::VRSkeletalMotionRange_WithoutController,
             snapshot.data(), static_cast<uint32_t>(snapshot.size()));
+        const bool controlsFresh = fresh;
+        input->UpdateScalarComponent(triggerValue_, controlsFresh
+            ? triggerValueState_.load(std::memory_order_acquire) : 0.0f, 0.0);
+        input->UpdateBooleanComponent(triggerClick_, controlsFresh &&
+            triggerClickState_.load(std::memory_order_acquire), 0.0);
+        input->UpdateScalarComponent(squeezeValue_, controlsFresh
+            ? squeezeValueState_.load(std::memory_order_acquire) : 0.0f, 0.0);
+        input->UpdateBooleanComponent(squeezeClick_, controlsFresh &&
+            squeezeClickState_.load(std::memory_order_acquire), 0.0);
 
         vr::DriverPose_t handPose{};
         handPose.qWorldFromDriverRotation = hmdPose.qWorldFromDriverRotation;
@@ -226,6 +261,14 @@ private:
     vr::ETrackedControllerRole role_;
     uint32_t objectId_ = vr::k_unTrackedDeviceIndexInvalid;
     vr::VRInputComponentHandle_t skeleton_ = 0;
+    vr::VRInputComponentHandle_t triggerValue_ = 0;
+    vr::VRInputComponentHandle_t triggerClick_ = 0;
+    vr::VRInputComponentHandle_t squeezeValue_ = 0;
+    vr::VRInputComponentHandle_t squeezeClick_ = 0;
+    std::atomic<float> triggerValueState_{0.0f};
+    std::atomic<bool> triggerClickState_{false};
+    std::atomic<float> squeezeValueState_{0.0f};
+    std::atomic<bool> squeezeClickState_{false};
     std::atomic<bool> hasSkeleton_{false};
     std::atomic<int64_t> lastUpdateMs_{0};
     std::mutex skeletonMutex_;
