@@ -7,6 +7,16 @@ Android phone as a wireless VR headset, Windows PC as the host.
 ## Project status
 The current prototype streams head orientation and checks hand landmarks. Room-scale positional tracking and boundary setup are planned as the next major milestone.
 
+## Tracking protocol
+
+The Windows receiver accepts separate UDP telemetry packets on port 9000:
+- `head_pose` v1 — normalized device orientation quaternion.
+- `hand_pose` v1 — up to two hands, each with 21 normalized image-space landmarks.
+
+The receiver validates packet structure and keeps the latest head and hand snapshots in `TrackingState` for the next runtime integration layer. This is tracking transport only: it does not yet register an OpenXR headset or controllers.
+
+See `Protocol/head-pose.v1.schema.json` and `Protocol/hand-pose.v1.schema.json` for the packet contracts.
+
 ## Planned components
 - `Android/` — Android client (camera, IMU, stereo display, network transport)
 - `Windows/` — Windows host (capture, streaming, OpenXR integration)
