@@ -25,9 +25,13 @@ The checkboxes below distinguish implemented code from hardware validation. A fe
 - [x] Compile an initial SteamVR/OpenVR server driver registering a virtual VRoom HMD
 - [x] Forward phone IMU orientation through the Windows host to the OpenVR driver
 - [x] Register a separate OpenVR display-redirect device
-- [x] Register left/right OpenVR controller devices with trigger, grip, and haptic input components
-- [x] Relay phone hand landmarks through the Windows host and expose thumb/index pinch as analog trigger and click inputs
-- [ ] Convert hand landmarks into calibrated controller poses and reliable spatial gestures
+- [x] Register left/right OpenVR hand endpoints and create `/input/skeleton/left` and `/input/skeleton/right` components
+- [x] Relay complete hand-pose v2 packets through Windows to the OpenVR driver
+- [x] Map MediaPipe's 21 hand-centred world landmarks into the 31-bone OpenVR parent-space hierarchy
+- [x] Update both `WithController` and `WithoutController` skeletal motion ranges; do not synthesize trigger/grip buttons
+- [ ] Compile and validate the skeletal driver against the target SteamVR runtime
+- [ ] Verify bone orientation, handedness, and articulated hand rendering in a SteamVR skeletal-input test application
+- [ ] Convert the hand root into calibrated VR-room coordinates; MediaPipe world landmarks alone cannot provide this
 - [ ] Add neutral-pose calibration and coordinate-axis mapping
 - [ ] Validate controller poses and inputs in SteamVR's device view and test applications
 - [ ] Validate compatibility with selected PC VR titles
@@ -67,7 +71,7 @@ The checkboxes below distinguish implemented code from hardware validation. A fe
 
 ## Engineering constraints
 - Keep control telemetry separate from video transport.
-- Camera landmarks are image-space points, not calibrated room-space controller poses. Current pinch input is a 2D gesture signal and must not be interpreted as controller position.
+- Camera landmarks are image-space points. MediaPipe world landmarks are hand-centred estimates, not calibrated camera-space or room-space positions. The skeletal driver can animate a hand-local skeleton but cannot locate its wrist in the VR room until camera-to-HMD calibration or another validated depth/position source is available.
 - A phone IMU provides orientation, not reliable 6DoF position by itself.
 - A single RGB webcam's 2D pose output must not be presented as measured 3D tracking.
 - Do not inject locomotion from noisy or uncalibrated body estimates.
