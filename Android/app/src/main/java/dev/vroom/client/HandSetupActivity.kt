@@ -42,6 +42,10 @@ import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.net.DatagramPacket
 import java.net.DatagramSocket
+import java.net.Socket
+import java.io.DataOutputStream
+import java.io.ByteArrayOutputStream
+import java.util.concurrent.atomic.AtomicBoolean
 import java.net.InetAddress
 import java.util.concurrent.atomic.AtomicLong
 import org.json.JSONArray
@@ -65,6 +69,11 @@ class HandSetupActivity : ComponentActivity() {
     @Volatile private var handDestination: InetAddress? = null
     @Volatile private var handSocket: DatagramSocket? = null
     private val handSequence = AtomicLong(0)
+    private val cameraStreamExecutor = Executors.newSingleThreadExecutor()
+    private val cameraFrameInFlight = AtomicBoolean(false)
+    @Volatile private var cameraStreamSocket: Socket? = null
+    @Volatile private var cameraStreamOutput: DataOutputStream? = null
+    private var lastCameraSendMs = 0L
 
     private val permissionRequest =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
@@ -83,8 +92,14 @@ class HandSetupActivity : ComponentActivity() {
                 try {
                     handDestination = InetAddress.getByName(pcAddress)
                     handSocket = DatagramSocket()
+                    val stream = Socket()
+                    stream.tcpNoDelay = true
+                    stream.connect(java.net.InetSocketAddress(handDestination, 9001), 2500)
+                    cameraStreamSocket = stream
+                    cameraStreamOutput = DataOutputStream(stream.getOutputStream())
+                    runOnUiThread { status.text = "Камера подключена к VRoom Desktop · TCP 9001" }
                 } catch (error: Exception) {
-                    runOnUiThread { status.text = getString(R.string.socket_error, error.message ?: "") }
+                    runOnUiThread { status.text = "Видео не подключено: ${error.message ?: ""}. Трекинг попробует продолжить работу." }
                 }
             }
         }
@@ -296,6 +311,41 @@ class HandSetupActivity : ComponentActivity() {
         }
     }
 
+    private fun sendCameraFrame(bitmap: Bitmap) {
+        val now = SystemClock.elapsedRealtime()
+        if (now - lastCameraSendMs < 100L) return
+        val output = cameraStreamOutput ?: return
+        val socket = cameraStreamSocket ?: return
+        if (!socket.isConnected || socket.isClosed || !cameraFrameInFlight.compareAndSet(false, true)) return
+        lastCameraSendMs = now
+        try {
+            val bytes = ByteArrayOutputStream()
+            bitmap.compress(Bitmap.CompressFormat.JPEG, 55, bytes)
+            val frame = bytes.toByteArray()
+            if (frame.isEmpty() || frame.size > 1_500_000) {
+                cameraFrameInFlight.set(false)
+                return
+            }
+            cameraStreamExecutor.execute {
+                try {
+                    synchronized(output) {
+                        output.writeInt(frame.size)
+                        output.write(frame)
+                        output.flush()
+                    }
+                } catch (_: Exception) {
+                    try { socket.close() } catch (_: Exception) { }
+                    cameraStreamOutput = null
+                    cameraStreamSocket = null
+                } finally {
+                    cameraFrameInFlight.set(false)
+                }
+            }
+        } catch (_: Exception) {
+            cameraFrameInFlight.set(false)
+        }
+    }
+
     private fun analyzeFrame(image: androidx.camera.core.ImageProxy) {
         try {
             val bitmap = image.toBitmap()
@@ -307,6 +357,7 @@ class HandSetupActivity : ComponentActivity() {
             // Hand landmarks are generated from this exact same bitmap, so they stay aligned.
             val modelBitmap = rotated
             overlay.updateFrame(modelBitmap)
+            sendCameraFrame(modelBitmap)
             val mpImage = BitmapImageBuilder(modelBitmap).build()
             val timestamp = maxOf(SystemClock.uptimeMillis(), lastFrameTimestamp + 1)
             lastFrameTimestamp = timestamp
@@ -320,6 +371,10 @@ class HandSetupActivity : ComponentActivity() {
         handLandmarker?.close()
         handSocket?.close()
         handSocket = null
+        try { cameraStreamSocket?.close() } catch (_: Exception) { }
+        cameraStreamSocket = null
+        cameraStreamOutput = null
+        cameraStreamExecutor.shutdownNow()
         cameraExecutor.shutdown()
         super.onDestroy()
     }
