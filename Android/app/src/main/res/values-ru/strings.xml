@@ -40,4 +40,7 @@
     <string name="room_invalid">Укажи размеры от 1 до 20 метров.</string>
     <string name="room_current">Сохранённая зона: %1$.1f × %2$.1f м</string>
     <string name="position_not_active">Позиционное отслеживание пока не запущено. Не полагайся на эту черновую границу как на защиту от столкновений.</string>
+    <string name="room_profile">Профиль пользователя</string>
+    <string name="room_profile_hint">Имя или название профиля, например Саша</string>
+    <string name="room_tracking_support">Поддержка трекинга на устройстве</string>
 </resources>
