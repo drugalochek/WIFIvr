@@ -29,10 +29,29 @@ class OpenVrSkeletonContractTests(unittest.TestCase):
         self.assertIn("{2, 6, 11, 16, 21}", self.header)
         self.assertIn("{1, 5, 9, 13, 17}", self.header)
 
-    def test_no_trigger_or_grip_emulation(self):
+    def test_pinch_and_fist_drive_standard_controller_inputs(self):
         for symbol in ("CreateScalarComponent", "CreateBooleanComponent",
                        "UpdateScalarComponent", "UpdateBooleanComponent"):
-            self.assertNotIn(symbol, self.header)
+            self.assertIn(symbol, self.header)
+        self.assertIn('"/input/trigger/value"', self.header)
+        self.assertIn('"/input/trigger/click"', self.header)
+        self.assertIn('"/input/squeeze/value"', self.header)
+        self.assertIn('"/input/squeeze/click"', self.header)
+        self.assertIn("triggerClickState_", self.header)
+        self.assertIn("squeezeClickState_", self.header)
+        self.assertIn("gesturePattern", self.driver)
+        self.assertIn('== "fist"', self.driver)
+        self.assertIn("rootPositionHead, pinch, fist", self.driver)
+
+    def test_roblox_oriented_steamvr_profile_and_remapping(self):
+        import json
+        profile = json.loads((ROOT / "SteamVRDriver/resources/input/vroom_controller_profile.json").read_text(encoding="utf-8"))
+        remapping = json.loads((ROOT / "SteamVRDriver/resources/input/vroom_controller_remapping.json").read_text(encoding="utf-8"))
+        self.assertEqual(profile["controller_type"], "vroom_hand")
+        self.assertEqual(profile["input_source"]["/input/trigger"]["type"], "trigger")
+        self.assertEqual(profile["input_source"]["/input/squeeze"]["type"], "trigger")
+        self.assertEqual(remapping["to_controller_type"], "vroom_hand")
+        self.assertEqual(remapping["layouts"][0]["from_controller_type"], "oculus_touch")
 
     def test_stale_hand_pose_is_cleared(self):
         self.assertIn("<= 300", self.header)
