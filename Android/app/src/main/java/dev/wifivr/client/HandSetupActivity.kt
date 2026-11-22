@@ -11,6 +11,7 @@ import android.os.Bundle
 import android.os.SystemClock
 import android.view.Gravity
 import android.view.View
+import android.widget.Button
 import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.TextView
@@ -35,6 +36,8 @@ class HandSetupActivity : ComponentActivity() {
     private lateinit var previewView: PreviewView
     private lateinit var overlay: HandOverlayView
     private lateinit var status: TextView
+    private lateinit var cameraSwitchButton: Button
+    private var useFrontCamera = false
     private lateinit var cameraExecutor: ExecutorService
     private var handLandmarker: HandLandmarker? = null
     private var poseLandmarker: PoseLandmarker? = null
@@ -146,8 +149,19 @@ class HandSetupActivity : ComponentActivity() {
             setTextColor(Color.rgb(184, 204, 226))
             setPadding(0, dp(5), 0, 0)
         }
+        cameraSwitchButton = Button(this).apply {
+            text = getString(R.string.switch_to_front_camera)
+            isAllCaps = false
+            setOnClickListener {
+                useFrontCamera = !useFrontCamera
+                overlay.setHands(emptyList())
+                overlay.setArms(emptyList())
+                startCamera()
+            }
+        }
         infoPanel.addView(heading)
         infoPanel.addView(status)
+        infoPanel.addView(cameraSwitchButton)
         root.addView(previewView, FrameLayout.LayoutParams(-1, -1))
         root.addView(overlay, FrameLayout.LayoutParams(-1, -1))
         root.addView(infoPanel, FrameLayout.LayoutParams(
@@ -171,15 +185,35 @@ class HandSetupActivity : ComponentActivity() {
                 .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
                 .build()
             analysis.setAnalyzer(cameraExecutor) { image -> analyzeFrame(image) }
+            val selector = if (useFrontCamera) {
+                CameraSelector.DEFAULT_FRONT_CAMERA
+            } else {
+                CameraSelector.DEFAULT_BACK_CAMERA
+            }
             try {
+                if (!provider.hasCamera(selector)) {
+                    useFrontCamera = false
+                    cameraSwitchButton.text = getString(R.string.switch_to_front_camera)
+                    status.text = getString(R.string.front_camera_unavailable)
+                    return@addListener
+                }
                 provider.unbindAll()
                 provider.bindToLifecycle(
                     this,
-                    CameraSelector.DEFAULT_BACK_CAMERA,
+                    selector,
                     preview,
                     analysis
                 )
-                status.text = getString(R.string.back_camera_active)
+                cameraSwitchButton.text = if (useFrontCamera) {
+                    getString(R.string.switch_to_back_camera)
+                } else {
+                    getString(R.string.switch_to_front_camera)
+                }
+                status.text = if (useFrontCamera) {
+                    getString(R.string.front_camera_active)
+                } else {
+                    getString(R.string.back_camera_active)
+                }
             } catch (error: Exception) {
                 status.text = getString(R.string.camera_start_error, error.message ?: "")
             }
@@ -194,8 +228,18 @@ class HandSetupActivity : ComponentActivity() {
             val rotated = android.graphics.Bitmap.createBitmap(
                 bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true
             )
-            overlay.setFrameSize(rotated.width, rotated.height)
-            val mpImage = BitmapImageBuilder(rotated).build()
+            val modelBitmap = if (useFrontCamera) {
+                val mirror = android.graphics.Matrix().apply {
+                    postScale(-1f, 1f, rotated.width / 2f, rotated.height / 2f)
+                }
+                android.graphics.Bitmap.createBitmap(
+                    rotated, 0, 0, rotated.width, rotated.height, mirror, true
+                )
+            } else {
+                rotated
+            }
+            overlay.setFrameSize(modelBitmap.width, modelBitmap.height)
+            val mpImage = BitmapImageBuilder(modelBitmap).build()
             val now = SystemClock.uptimeMillis()
             val timestamp = maxOf(now, lastFrameTimestamp + 1)
             lastFrameTimestamp = timestamp
