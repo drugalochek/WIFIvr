@@ -479,6 +479,8 @@ private:
     void ReceiveHandInputLoop() {
         static const std::regex sidePattern(R"rx("handedness"\s*:\s*"(Left|Right)")rx");
         static const std::regex confidencePattern(R"rx("confidence"\s*:\s*([-+0-9.eE]+))rx");
+        static const std::regex pinchPattern(R"rx("pinch"\s*:\s*([-+0-9.eE]+))rx");
+        static const std::regex gesturePattern(R"rx("gesture"\s*:\s*"(pinch|point|fist|open_palm|unknown)")rx");
         static const std::regex worldPattern(R"rx("worldLandmarks"\s*:\s*\[([\s\S]*?)\])rx");
         static const std::regex rootPattern(
             R"rx("rootPosition"\s*:\s*\{\s*"x"\s*:\s*([-+0-9.eE]+)\s*,\s*"y"\s*:\s*([-+0-9.eE]+)\s*,\s*"z"\s*:\s*([-+0-9.eE]+)\s*\})rx");
@@ -504,8 +506,10 @@ private:
                     auto* controller = side == "Left" ? leftController_.get() : rightController_.get();
                     if (!controller) continue;
 
-                    std::smatch confidenceMatch, worldMatch, rootMatch;
+                    std::smatch confidenceMatch, pinchMatch, gestureMatch, worldMatch, rootMatch;
                     if (!std::regex_search(object, confidenceMatch, confidencePattern) ||
+                        !std::regex_search(object, pinchMatch, pinchPattern) ||
+                        !std::regex_search(object, gestureMatch, gesturePattern) ||
                         !std::regex_search(object, worldMatch, worldPattern) ||
                         !std::regex_search(object, rootMatch, rootPattern)) {
                         controller->ClearSkeleton();
@@ -513,7 +517,10 @@ private:
                         continue;
                     }
                     const float confidence = std::stof(confidenceMatch[1].str());
-                    if (!std::isfinite(confidence) || confidence < 0.0f || confidence > 1.0f) {
+                    const float pinch = std::stof(pinchMatch[1].str());
+                    const bool fist = gestureMatch[1].str() == "fist";
+                    if (!std::isfinite(confidence) || confidence < 0.0f || confidence > 1.0f ||
+                        !std::isfinite(pinch) || pinch < 0.0f || pinch > 1.0f) {
                         controller->ClearSkeleton();
                         if (side == "Left") seenLeft = true; else seenRight = true;
                         continue;
@@ -536,7 +543,7 @@ private:
                             std::stof(rootMatch[2].str()),
                             std::stof(rootMatch[3].str())
                         };
-                        controller->SetHandPose(points, confidence, rootPositionHead);
+                        controller->SetHandPose(points, confidence, rootPositionHead, pinch, fist);
                     } else controller->ClearSkeleton();
                     if (side == "Left") seenLeft = true; else seenRight = true;
                 }
