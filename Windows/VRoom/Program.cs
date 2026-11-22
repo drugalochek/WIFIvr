@@ -93,7 +93,7 @@ internal sealed class DashboardForm : Form
             AutoSize = true, ForeColor = Color.LightSteelBlue, Padding = new Padding(0, 0, 0, 14)
         });
 
-        var cards = new TableLayoutPanel { Dock = DockStyle.Top, AutoSize = true, ColumnCount = 2, RowCount = 2, Padding = new Padding(0, 0, 0, 10) };
+        var cards = new TableLayoutPanel { Dock = DockStyle.Top, AutoSize = true, ColumnCount = 2, RowCount = 3, Padding = new Padding(0, 0, 0, 10) };
         cards.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
         cards.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         cards.RowStyles.Add(new RowStyle(SizeType.AutoSize));
