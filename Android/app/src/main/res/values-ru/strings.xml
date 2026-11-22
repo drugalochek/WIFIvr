@@ -58,7 +58,7 @@
     <string name="tracking_fps">Частота трекинга: %.1f FPS</string>
     <string name="switch_to_headset_mode">Режим VR-очков</string>
     <string name="switch_to_phone_mode">Обычный режим камеры</string>
-    <string name="headset_mode_note">Это альбомный предпросмотр камеры, пока не стереоскопический VR.</string>
+    <string name="headset_mode_note">Два одинаковых изображения камеры рядом. Раздельная перспектива для каждого глаза пока не реализована.</string>
     <string name="phone_mode_note">Обычный режим камеры включён.</string>
     <string name="front_camera_unavailable">Фронтальная камера на этом устройстве недоступна.</string>
 </resources>
