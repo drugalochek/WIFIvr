@@ -4,15 +4,15 @@ plugins {
 }
 
 android {
-    namespace = "dev.wifivr.client"
+    namespace = "dev.vroom.client"
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "dev.wifivr.client"
+        applicationId = "dev.vroom.client"
         minSdk = 28
         targetSdk = 35
-        versionCode = 19
-        versionName = "0.3.8"
+        versionCode = 20
+        versionName = "0.4.0"
     }
 
     compileOptions {
