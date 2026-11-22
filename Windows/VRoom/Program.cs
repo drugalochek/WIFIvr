@@ -23,6 +23,7 @@ internal static class Program
 
 internal sealed class DashboardForm : Form
 {
+    private readonly UdpClient _driverRelay = new();
     private readonly Label _status = MakeValue("Остановлено");
     private readonly Label _head = MakeValue("Нет данных");
     private readonly Label _hands = MakeValue("Нет данных");
@@ -379,6 +380,8 @@ internal sealed class DashboardForm : Form
                             if (pose.Length() is < 0.5f or > 1.5f) throw new InvalidDataException("Некорректная длина quaternion");
                             pose = Quaternion.Normalize(pose);
                             UpdateUi(() => _head.Text = $"x {pose.X:F2} · y {pose.Y:F2} · z {pose.Z:F2} · w {pose.W:F2}");
+                            // Relay the validated phone IMU packet to the SteamVR driver process.
+                            _ = _driverRelay.SendAsync(packet.Buffer, packet.Buffer.Length, new IPEndPoint(IPAddress.Loopback, 9003));
                             break;
                         }
                         case ("body_pose", 1):
@@ -495,6 +498,7 @@ internal sealed class DashboardForm : Form
         _pcCameraStop?.Cancel();
         _camera.Image?.Dispose();
         _pcCamera.Image?.Dispose();
+        _driverRelay.Dispose();
         base.OnFormClosing(e);
     }
 }
