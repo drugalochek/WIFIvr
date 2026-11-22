@@ -8,7 +8,7 @@ import android.graphics.Typeface
 import android.opengl.GLES11Ext
 import android.opengl.GLES20
 import android.opengl.GLSurfaceView
-import android.os.Bundle
+import android.os.Bundle\nimport android.os.Environment\nimport android.content.ContentValues\nimport android.provider.MediaStore
 import android.view.Gravity
 import android.widget.Button
 import android.widget.FrameLayout
@@ -48,7 +48,7 @@ class SpatialScanActivity : Activity(), GLSurfaceView.Renderer {
     private val vertices = floatBuffer(floatArrayOf(-1f, -1f, 1f, -1f, -1f, 1f, 1f, 1f))
     private val rawUv = floatBuffer(floatArrayOf(0f, 0f, 1f, 0f, 0f, 1f, 1f, 1f))
     @Volatile private var scanActive = false
-    @Volatile private var activityResumed = false
+    @Volatile private var activityResumed = false\n    @Volatile private var waitingForArInstall = false
 
     private fun floatBuffer(values: FloatArray): FloatBuffer =
         ByteBuffer.allocateDirect(values.size * 4).order(ByteOrder.nativeOrder())
@@ -114,7 +114,7 @@ class SpatialScanActivity : Activity(), GLSurfaceView.Renderer {
     private fun initializeAr() {
         try {
             val installStatus = ArCoreApk.getInstance().requestInstall(this, true)
-            if (installStatus == ArCoreApk.InstallStatus.INSTALL_REQUESTED) return
+            if (installStatus == ArCoreApk.InstallStatus.INSTALL_REQUESTED) {\n                waitingForArInstall = true\n                return\n            }\n            waitingForArInstall = false
             if (!ArCoreApk.getInstance().checkAvailability(this).isSupported) {
                 stats.text = getString(R.string.ar_unsupported)
                 return
