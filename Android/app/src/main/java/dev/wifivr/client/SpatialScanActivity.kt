@@ -153,7 +153,11 @@ class SpatialScanActivity : Activity(), GLSurfaceView.Renderer {
         activityResumed = true
         if (::glView.isInitialized) {
             glView.onResume()
-            if (scanActive) resumeSession()
+            if (waitingForArInstall && ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
+                initializeAr()
+            } else if (scanActive) {
+                resumeSession()
+            }
         }
     }
 
@@ -314,9 +318,24 @@ class SpatialScanActivity : Activity(), GLSurfaceView.Renderer {
                 .put("tracking", "ARCore world coordinates")
                 .put("planes", planeArray)
                 .put("pointCloud", pointArray)
-            val file = File(filesDir, "vroom_room_scan.json")
-            file.writeText(result.toString())
-            stats.text = getString(R.string.room_scan_saved, file.absolutePath, snapshot.first.size, snapshot.second.size)
+            val savedLocation = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+                val values = ContentValues().apply {
+                    put(MediaStore.Downloads.DISPLAY_NAME, "vroom_room_scan.json")
+                    put(MediaStore.Downloads.MIME_TYPE, "application/json")
+                    put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/VRoom")
+                }
+                val uri = contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
+                    ?: throw IllegalStateException("Could not create scan file in Downloads")
+                contentResolver.openOutputStream(uri)?.use {
+                    it.write(result.toString().toByteArray(Charsets.UTF_8))
+                } ?: throw IllegalStateException("Could not write scan file")
+                uri.toString()
+            } else {
+                val file = File(filesDir, "vroom_room_scan.json")
+                file.writeText(result.toString())
+                file.absolutePath
+            }
+            stats.text = getString(R.string.room_scan_saved, savedLocation, snapshot.first.size, snapshot.second.size)
         } catch (error: Exception) {
             stats.text = getString(R.string.room_scan_error, error.message ?: "")
         }
