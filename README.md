@@ -9,7 +9,7 @@
 - Windows runs MoveNet Lightning locally on the selected PC webcam and detects 17 full-body keypoints.
 - Windows has a desktop dashboard for receiving head/hand telemetry and visualizing the PC-webcam skeleton.
 - Android sends a throttled JPEG camera preview to Windows over TCP port 9001.
-- The SteamVR OpenVR driver registers a virtual HMD, a display-redirect device, and left/right controller devices. The controllers currently expose an analog trigger and click from thumb/index pinch gestures; their 3D poses remain invalid until camera calibration and 3D tracking are implemented.
+- The SteamVR OpenVR driver registers a virtual HMD, a display-redirect device, and left/right hand endpoints with OpenVR skeletal input components. Hand-pose v2 is relayed intact to the driver, which maps MediaPipe hand-centred landmarks into the 31-bone OpenVR hierarchy and updates both skeletal motion ranges. No trigger/grip values are synthesized. The hand-device root poses remain invalid until camera-to-HMD calibration provides room-space positions.
 - The display-redirect path captures the SteamVR compositor texture, reads it back through D3D11, JPEG-encodes it, and sends it to the Windows host over loopback TCP 9004.
 - The Windows host relays those frames over TCP 9002 to Android. The Android VR display crops the side-by-side frame into left/right eye images.
 
@@ -17,7 +17,7 @@
 
 ## What is not implemented yet
 
-- Calibrated 3D controller poses. The current controller devices only expose 2D pinch-derived trigger input; grip, pose, and reliable spatial tracking are not yet implemented.
+- Calibrated room-space hand poses and validated rendered articulated hand meshes. The driver submits 31-bone parent-space skeletal transforms, but MediaPipe world landmarks are hand-centred estimates and cannot locate a hand in the VR room. OpenVR hand endpoints are currently controller-class tracked devices because that is the available SteamVR skeletal-input path; they do not publish a valid controller pose or synthesize trigger/grip buttons.
 - Calibrated 3D body/hand tracking. MoveNet output from one PC webcam is 2D image-space keypoints only.
 - Reliable 6DoF head position. The phone IMU supplies orientation, not absolute position.
 - Working arm-swing or walk-in-place locomotion injected into SteamVR.
@@ -36,9 +36,9 @@ The Windows host receives UDP telemetry on port 9000 and length-prefixed JPEG st
 - TCP 9001 — JPEG camera frames from the Android phone, each prefixed by a 4-byte big-endian frame length.
 - TCP 9002 — side-by-side SteamVR compositor frames relayed from the Windows host to Android.
 - TCP 9004 — local loopback stream from the OpenVR driver's compositor-frame capture to the Windows host.
-- UDP 9005 — local loopback hand-input relay from the Windows host to the OpenVR driver. The current payload contains left/right pinch values; -1 means that hand is not detected.
+- UDP 9005 — local loopback hand-pose relay from the Windows host to the OpenVR driver. For v2, Windows forwards the complete packet; the driver consumes handedness, confidence, and 21 MediaPipe world landmarks per hand. Legacy v1 packets remain accepted by Windows but do not produce a skeletal pose.
 
-The phone clamps normalized hand x/y coordinates to [0, 1]. Landmark z is relative model depth and may be negative. The receiver currently visualizes hand landmarks; it does not infer room-space controller poses from them.
+The phone clamps normalized hand x/y coordinates to [0, 1]. Landmark z is relative model depth and may be negative. Windows visualizes image-space hand landmarks; the OpenVR driver converts available hand-centred world landmarks into parent-space bone transforms, but does not infer the hand root's room-space pose from them.
 
 ## Run
 
@@ -64,7 +64,7 @@ Open the repository's Actions tab, select the latest successful **Build VRoom** 
 
 - `Android/` — Android phone client (IMU, camera hand tracking, network telemetry, VR display).
 - `Windows/` — Windows desktop host and tracking dashboard.
-- `SteamVRDriver/` — OpenVR HMD and display-redirect driver.
+- `SteamVRDriver/` — OpenVR HMD, display-redirect, and skeletal-hand driver.
 - `docs/ROADMAP.md` — implementation milestones and remaining work.
 - `docs/TEST_PLAN.md` — staged hardware validation checklist.
 
