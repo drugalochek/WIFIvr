@@ -171,7 +171,8 @@ class VrSessionActivity : Activity(), SensorEventListener {
     private fun startNetwork(host: String) {
         networkExecutor.execute {
             try {
-                target = InetAddress.getByName(host)
+                val resolvedAddress = InetAddress.getByName(host)
+                target = resolvedAddress
                 telemetrySocket = DatagramSocket()
                 preview.post { preview.showStatus("Связь с ПК установлена · запуск трекинга") }
                 startHeadSender()
@@ -180,7 +181,7 @@ class VrSessionActivity : Activity(), SensorEventListener {
                     try {
                         socket = Socket()
                         socket.tcpNoDelay = true
-                        socket.connect(InetSocketAddress(target, 9001), 2500)
+                        socket.connect(InetSocketAddress(resolvedAddress, 9001), 2500)
                         cameraSocket = socket
                         cameraOutput = DataOutputStream(socket.getOutputStream())
                         preview.post { preview.setConnectionText("ПК подключён · камера и руки передаются") }
