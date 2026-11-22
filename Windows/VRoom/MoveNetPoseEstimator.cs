@@ -42,8 +42,8 @@ internal sealed class MoveNetPoseEstimator : IDisposable
                     .ConfigureAwait(false);
                 response.EnsureSuccessStatusCode();
                 await using (var output = new FileStream(temporaryPath, FileMode.Create, FileAccess.Write, FileShare.None))
-                await using (var input = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false))
-                    await input.CopyToAsync(output, cancellationToken).ConfigureAwait(false);
+                await using (var downloadStream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false))
+                    await downloadStream.CopyToAsync(output, cancellationToken).ConfigureAwait(false);
 
                 if (!await IsValidModelAsync(temporaryPath, cancellationToken).ConfigureAwait(false))
                     throw new InvalidDataException("SHA-256 модели MoveNet не совпадает с опубликованной контрольной суммой.");
@@ -125,7 +125,7 @@ internal sealed class MoveNetPoseEstimator : IDisposable
             var score = Math.Clamp(output[0, 0, i, 2], 0f, 1f);
             var imageX = (x * InputSize - padLeft) / scale / bgrFrame.Width;
             var imageY = (y * InputSize - padTop) / scale / bgrFrame.Height;
-            points[i] = new PointF(Math.Clamp(imageX, 0f, 1f), Math.Clamp(imageY, 0f, 1f));
+            points[i] = new PointF((float)Math.Clamp(imageX, 0.0, 1.0), (float)Math.Clamp(imageY, 0.0, 1.0));
             scores[i] = score;
             scoreTotal += score;
         }
