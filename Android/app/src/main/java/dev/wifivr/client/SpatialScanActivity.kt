@@ -293,13 +293,12 @@ class SpatialScanActivity : Activity(), GLSurfaceView.Renderer {
         val activeSession = session ?: return
         try {
             if (surfaceWidth > 0 && surfaceHeight > 0) {
-                // The regular CameraX view is upright in portrait. On this device ARCore's
-                // external camera texture is delivered upside down relative to that view.
-                // Apply a 180-degree display-geometry correction here, not a bitmap/UV-only flip:
-                // ARCore then rotates BOTH the camera background and its 3D projection together.
+                // Match the physical display rotation exactly. Do not add a 180-degree
+                // correction or mirror the UVs: ARCore's transformed display UVs already
+                // account for sensor orientation. An extra half-turn makes the whole scene
+                // appear upside down and misaligns the depth overlay.
                 val displayRotation = glView.display?.rotation ?: windowManager.defaultDisplay.rotation
-                val arDisplayRotation = (displayRotation + Surface.ROTATION_180) % 4
-                activeSession.setDisplayGeometry(arDisplayRotation, surfaceWidth, surfaceHeight)
+                activeSession.setDisplayGeometry(displayRotation, surfaceWidth, surfaceHeight)
             }
             val frame = activeSession.update()
             lastTrackingState = frame.camera.trackingState
@@ -684,19 +683,21 @@ class SpatialScanActivity : Activity(), GLSurfaceView.Renderer {
     private fun saveScan() {
         try {
             val snapshot = synchronized(this) {
-                points.values.map { it.copyOf() } to planes.values.map { JSONObject(it.toString()) }
+                Triple(
+                    points.values.map { it.copyOf() },
+                    planes.values.map { JSONObject(it.toString()) },
+                    meshTriangles.values.map { it.copyOf() }
+                )
             }
             val pointArray = JSONArray()
             snapshot.first.forEach { pointArray.put(JSONArray(listOf(it[0], it[1], it[2]))) }
             val meshArray = JSONArray()
-            synchronized(this) {
-                meshTriangles.values.forEach { triangle ->
-                    meshArray.put(JSONArray(listOf(
-                        JSONArray(listOf(triangle[0], triangle[1], triangle[2])),
-                        JSONArray(listOf(triangle[3], triangle[4], triangle[5])),
-                        JSONArray(listOf(triangle[6], triangle[7], triangle[8]))
-                    )))
-                }
+            snapshot.third.forEach { triangle ->
+                meshArray.put(JSONArray(listOf(
+                    JSONArray(listOf(triangle[0], triangle[1], triangle[2])),
+                    JSONArray(listOf(triangle[3], triangle[4], triangle[5])),
+                    JSONArray(listOf(triangle[6], triangle[7], triangle[8]))
+                )))
             }
             val planeArray = JSONArray()
             snapshot.second.forEach { planeArray.put(it) }
@@ -724,7 +725,30 @@ class SpatialScanActivity : Activity(), GLSurfaceView.Renderer {
                 file.writeText(result.toString())
                 file.absolutePath
             }
-            stats.text = getString(R.string.room_scan_saved, savedLocation, snapshot.first.size, snapshot.second.size)
+            // Also export a standard Wavefront OBJ so the reconstructed triangle surface
+            // can be opened in Blender, MeshLab and common 3D tools.
+            val obj = StringBuilder("# VRoom depth reconstruction\n")
+            snapshot.third.forEach { triangle ->
+                obj.append("v ${triangle[0]} ${triangle[1]} ${triangle[2]}\n")
+                obj.append("v ${triangle[3]} ${triangle[4]} ${triangle[5]}\n")
+                obj.append("v ${triangle[6]} ${triangle[7]} ${triangle[8]}\n")
+            }
+            for (face in 0 until snapshot.third.size) {
+                val base = face * 3 + 1
+                obj.append("f $base ${base + 1} ${base + 2}\n")
+            }
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+                val values = ContentValues().apply {
+                    put(MediaStore.MediaColumns.DISPLAY_NAME, "vroom_room_mesh.obj")
+                    put(MediaStore.MediaColumns.MIME_TYPE, "text/plain")
+                    put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/VRoom")
+                }
+                val uri = contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
+                    ?: throw IllegalStateException("Could not create OBJ file in Downloads")
+                contentResolver.openOutputStream(uri)?.use { it.write(obj.toString().toByteArray(Charsets.UTF_8)) }
+                    ?: throw IllegalStateException("Could not write OBJ file")
+            }
+            stats.text = "Скан сохранён: JSON + OBJ · точек: ${snapshot.first.size} · треугольников: ${snapshot.third.size}"
         } catch (error: Exception) {
             stats.text = getString(R.string.room_scan_error, error.message ?: "")
         }
