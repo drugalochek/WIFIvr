@@ -12,6 +12,7 @@ import android.widget.Button
 import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.TextView
+import android.content.Intent
 import org.json.JSONObject
 import java.net.DatagramPacket
 import java.net.DatagramSocket
@@ -72,6 +73,7 @@ class MainActivity : Activity(), SensorEventListener {
             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
         ))
         root.addView(connectButton)
+        root.addView(Button(this).apply { text = "Проверка рук и камеры"; setOnClickListener { startActivity(Intent(this@MainActivity, HandSetupActivity::class.java)) } })
         root.addView(status)
         setContentView(root)
     }
