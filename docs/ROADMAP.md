@@ -30,7 +30,6 @@
 - [ ] Capture desktop/game frames on Windows
 - [ ] Encode and stream video to Android over a low-latency transport
 - [ ] Render separate left/right eye views on Android
-- [x] Add adjustable Android headset-preview FOV control (60°–110°, visual crop/scale only)
 - [ ] Add lens distortion and headset geometry calibration
 - [ ] Render and interact with a spatial overlay in the Android VR view
 
