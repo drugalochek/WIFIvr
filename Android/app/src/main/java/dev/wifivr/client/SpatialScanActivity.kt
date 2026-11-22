@@ -44,6 +44,10 @@ class SpatialScanActivity : Activity(), GLSurfaceView.Renderer {
     private val points = LinkedHashMap<String, FloatArray>()
     private val planes = LinkedHashMap<String, JSONObject>()
     private var lastStatsMs = 0L
+    @Volatile private var depthSupported = false
+    @Volatile private var depthFrames = 0L
+    @Volatile private var lastTrackingState = TrackingState.STOPPED
+    @Volatile private var lastTrackingFailure = ""
     private var cameraTexture = 0
     private var program = 0
     private var positionHandle = 0
@@ -138,9 +142,8 @@ class SpatialScanActivity : Activity(), GLSurfaceView.Renderer {
             val config = Config(activeSession)
             config.planeFindingMode = Config.PlaneFindingMode.HORIZONTAL_AND_VERTICAL
             config.updateMode = Config.UpdateMode.LATEST_CAMERA_IMAGE
-            if (activeSession.isDepthModeSupported(Config.DepthMode.AUTOMATIC)) {
-                config.depthMode = Config.DepthMode.AUTOMATIC
-            }
+            depthSupported = activeSession.isDepthModeSupported(Config.DepthMode.AUTOMATIC)
+            if (depthSupported) config.depthMode = Config.DepthMode.AUTOMATIC
             activeSession.configure(config)
             session = activeSession
             scanActive = true
@@ -266,6 +269,8 @@ class SpatialScanActivity : Activity(), GLSurfaceView.Renderer {
                 activeSession.setDisplayGeometry(windowManager.defaultDisplay.rotation, surfaceWidth, surfaceHeight)
             }
             val frame = activeSession.update()
+            lastTrackingState = frame.camera.trackingState
+            lastTrackingFailure = if (lastTrackingState == TrackingState.TRACKING) "" else frame.camera.trackingFailureReason.toString()
             val transformedUv = floatBuffer(FloatArray(8))
             // Rewind buffers because ARCore advances their positions while transforming UVs.
             rawUv.position(0)
@@ -279,7 +284,9 @@ class SpatialScanActivity : Activity(), GLSurfaceView.Renderer {
             if (now - lastStatsMs > 500L) {
                 lastStatsMs = now
                 val counts = synchronized(this) { planes.size to points.size }
-                val message = getString(R.string.room_scan_stats, counts.first, counts.second)
+                val depthStatus = if (!depthSupported) "Depth API недоступен" else "Depth-кадров: $depthFrames"
+                val trackingStatus = if (lastTrackingState == TrackingState.TRACKING) "Камера: tracking" else "Камера: $lastTrackingState ($lastTrackingFailure)"
+                val message = getString(R.string.room_scan_stats, counts.first, counts.second) + "\n$trackingStatus · $depthStatus"
                 runOnUiThread {
                     if (!isFinishing) {
                         stats.text = message
@@ -449,6 +456,7 @@ class SpatialScanActivity : Activity(), GLSurfaceView.Renderer {
             return
         }
         try {
+            depthFrames++
             val width = depthImage.width
             val height = depthImage.height
             if (width <= 0 || height <= 0) return
@@ -467,7 +475,7 @@ class SpatialScanActivity : Activity(), GLSurfaceView.Renderer {
             val cameraPose = frame.camera.pose
             // 8-pixel sampling gives a substantially denser metric cloud than ARCore feature points
             // while keeping CPU use and saved scan size bounded on mobile devices.
-            val stride = 8
+            val stride = 6
             synchronized(this) {
                 var y = stride / 2
                 while (y < height && points.size < 15000) {
