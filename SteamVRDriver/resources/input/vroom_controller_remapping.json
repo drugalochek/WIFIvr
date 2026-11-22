@@ -1,0 +1,9 @@
+{
+  "to_controller_type": "vroom_hand",
+  "layouts": [
+    {
+      "priority": 1,
+      "from_controller_type": "oculus_touch"
+    }
+  ]
+}
