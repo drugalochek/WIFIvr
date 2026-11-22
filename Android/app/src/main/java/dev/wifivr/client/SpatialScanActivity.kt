@@ -366,7 +366,8 @@ class SpatialScanActivity : Activity(), GLSurfaceView.Renderer {
 
             // Clip each 10 cm grid line to the detected plane polygon.
             fun addClippedLine(vertical: Boolean, fixed: Float, start: Float, end: Float) {
-                val samples = 160
+                // Fewer clipping samples keep the grid renderer cheap without changing plane geometry.
+                val samples = 40
                 var previous: Pair<Float, Float>? = null
                 for (step in 0..samples) {
                     val along = start + (end - start) * step / samples
@@ -415,6 +416,10 @@ class SpatialScanActivity : Activity(), GLSurfaceView.Renderer {
                         .put("extent", JSONArray(listOf(plane.extentX, plane.extentZ)))
                 }
             }
+            // Prefer ARCore's dense depth map when the device supports the Depth API.
+            // Unlike feature points, these samples carry metric distance in millimetres.
+            collectDepthPoints(frame)
+
             val cloud: PointCloud = frame.acquirePointCloud()
             try {
                 val buffer = cloud.points
@@ -433,6 +438,67 @@ class SpatialScanActivity : Activity(), GLSurfaceView.Renderer {
             } finally {
                 cloud.release()
             }
+        }
+    }
+
+    private fun collectDepthPoints(frame: Frame) {
+        val depthImage = try {
+            frame.acquireDepthImage16Bits()
+        } catch (_: Exception) {
+            // Depth may not be ready on every frame; keep the ARCore feature-point fallback.
+            return
+        }
+        try {
+            val width = depthImage.width
+            val height = depthImage.height
+            if (width <= 0 || height <= 0) return
+            val plane = depthImage.planes[0]
+            val buffer = plane.buffer
+            val intrinsics = frame.camera.imageIntrinsics
+            val cameraSize = intrinsics.imageDimensions
+            val scaleX = width.toFloat() / cameraSize[0].coerceAtLeast(1)
+            val scaleY = height.toFloat() / cameraSize[1].coerceAtLeast(1)
+            val fx = intrinsics.focalLength[0] * scaleX
+            val fy = intrinsics.focalLength[1] * scaleY
+            val cx = intrinsics.principalPoint[0] * scaleX
+            val cy = intrinsics.principalPoint[1] * scaleY
+            if (fx <= 0f || fy <= 0f) return
+
+            val cameraPose = frame.camera.pose
+            // 8-pixel sampling gives a substantially denser metric cloud than ARCore feature points
+            // while keeping CPU use and saved scan size bounded on mobile devices.
+            val stride = 8
+            synchronized(this) {
+                var y = stride / 2
+                while (y < height && points.size < 15000) {
+                    var x = stride / 2
+                    while (x < width && points.size < 15000) {
+                        val offset = y * plane.rowStride + x * plane.pixelStride
+                        if (offset + 1 < buffer.limit()) {
+                            val packed = buffer.getShort(offset).toInt() and 0xFFFF
+                            val depthMm = packed and 0x1FFF
+                            val confidence = packed ushr 13
+                            if (depthMm > 0 && confidence >= 1) {
+                                val depth = depthMm / 1000f
+                                val cameraPoint = floatArrayOf(
+                                    (x - cx) * depth / fx,
+                                    -(y - cy) * depth / fy,
+                                    -depth
+                                )
+                                val world = cameraPose.transformPoint(cameraPoint)
+                                val key = "${(world[0] * 20).toInt()}_${(world[1] * 20).toInt()}_${(world[2] * 20).toInt()}"
+                                if (!points.containsKey(key)) points[key] = world
+                            }
+                        }
+                        x += stride
+                    }
+                    y += stride
+                }
+            }
+        } catch (_: Exception) {
+            // A transient depth-buffer or intrinsics issue must not stop the live scan.
+        } finally {
+            depthImage.close()
         }
     }
 
