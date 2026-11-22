@@ -19,6 +19,7 @@ import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.ComponentActivity
+import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
@@ -144,7 +145,7 @@ class HandSetupActivity : ComponentActivity() {
         }
         cameraSwitchButton = Button(this).apply {
             text = getString(R.string.switch_to_front_camera); isAllCaps = false
-            setOnClickListener { useFrontCamera = !useFrontCamera; overlay.updateHands(emptyList()); startCamera() }
+            setOnClickListener { useFrontCamera = !useFrontCamera; this@HandSetupActivity.overlay.updateHands(emptyList()); startCamera() }
         }
         infoPanel.addView(heading); infoPanel.addView(status)
         infoPanel.addView(cameraSwitchButton); infoPanel.addView(modeButton)
