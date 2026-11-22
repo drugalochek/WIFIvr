@@ -15,7 +15,7 @@ class HandPoseV2ContractTests(unittest.TestCase):
         self.assertEqual(self.schema["properties"]["version"]["const"], 2)
         hand = self.schema["properties"]["hands"]["items"]
         self.assertEqual(set(hand["required"]), {
-            "handedness", "confidence", "gesture", "pinch", "landmarks", "worldLandmarks"
+            "handedness", "confidence", "gesture", "pinch", "landmarks", "worldLandmarks", "rootPosition"
         })
 
     def test_image_and_world_landmarks_are_21_points(self):
@@ -32,6 +32,12 @@ class HandPoseV2ContractTests(unittest.TestCase):
         self.assertNotIn("minimum", world_xyz["x"])
         self.assertEqual(image_xyz["x"]["minimum"], 0)
         self.assertEqual(image_xyz["x"]["maximum"], 1)
+
+    def test_root_position_is_hmd_local_and_bounded(self):
+        root = self.schema["properties"]["hands"]["items"]["properties"]["rootPosition"]
+        self.assertEqual(set(root["required"]), {"x", "y", "z"})
+        self.assertEqual(root["properties"]["x"]["minimum"], -3)
+        self.assertIn("HMD-local", root["description"])
 
     def test_confidence_and_pinch_are_normalized(self):
         props = self.schema["properties"]["hands"]["items"]["properties"]
