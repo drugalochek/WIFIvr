@@ -5,6 +5,8 @@ using System.Net;
 using System.Net.Sockets;
 using System.Numerics;
 using System.Text.Json;
+using OpenCvSharp;
+using OpenCvSharp.Extensions;
 
 namespace VRoom;
 
@@ -39,6 +41,18 @@ internal sealed class DashboardForm : Form
     private Task? _cameraListener;
     private TcpListener? _tcpListener;
     private long _cameraFrames;
+    private readonly PictureBox _pcCamera = new() { Dock = DockStyle.Fill, BackColor = Color.Black, SizeMode = PictureBoxSizeMode.Zoom };
+    private readonly ComboBox _pcCameraIndex = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 100 };
+    private readonly Button _pcCameraToggle = new() { Text = "Запустить веб-камеру", AutoSize = true };
+    private CancellationTokenSource? _pcCameraStop;
+    private Task? _pcCameraTask;
+    private readonly TrackBar _armSensitivity = new() { Minimum = 1, Maximum = 100, Value = 50, TickFrequency = 10, Width = 260 };
+    private readonly TrackBar _walkSensitivity = new() { Minimum = 1, Maximum = 100, Value = 40, TickFrequency = 10, Width = 260 };
+    private readonly TrackBar _motionSmoothing = new() { Minimum = 0, Maximum = 100, Value = 65, TickFrequency = 10, Width = 260 };
+    private readonly CheckBox _enableOverlay = new() { Text = "Включить пространственное меню (профиль)", Checked = true, AutoSize = true };
+    private readonly CheckBox _enableArmSwing = new() { Text = "Arm Swing · движение руками", Checked = true, AutoSize = true };
+    private readonly CheckBox _enableWalkInPlace = new() { Text = "Walk in Place · шаги на месте (нужна камера тела)", AutoSize = true };
+    private readonly ComboBox _locomotionMode = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 220 };
 
     public DashboardForm()
     {
@@ -86,7 +100,13 @@ internal sealed class DashboardForm : Form
         cameraHeader.Controls.Add(_cameraStatus);
         cameraPanel.Controls.Add(cameraHeader, 0, 0);
         cameraPanel.Controls.Add(_camera, 0, 1);
-        root.Controls.Add(cameraPanel);
+        var tabs = new TabControl { Dock = DockStyle.Fill };
+        var phoneTab = new TabPage("Камера телефона") { BackColor = BackColor };
+        phoneTab.Controls.Add(cameraPanel);
+        tabs.TabPages.Add(phoneTab);
+        tabs.TabPages.Add(BuildPcCameraTab());
+        tabs.TabPages.Add(BuildSettingsTab());
+        root.Controls.Add(tabs);
 
         var bottom = new TableLayoutPanel { Dock = DockStyle.Fill, RowCount = 2, ColumnCount = 1 };
         bottom.RowStyles.Add(new RowStyle(SizeType.AutoSize));
@@ -105,6 +125,76 @@ internal sealed class DashboardForm : Form
         Log("VRoom Desktop готов. Запусти приём, затем подключи телефон к одному Wi-Fi.");
     }
 
+    private TabPage BuildPcCameraTab()
+    {
+        var page = new TabPage("Веб-камера ПК") { BackColor = BackColor };
+        var layout = new TableLayoutPanel { Dock = DockStyle.Fill, Padding = new Padding(12), RowCount = 3, ColumnCount = 1 };
+        layout.RowStyles.Add(new RowStyle(SizeType.AutoSize)); layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100)); layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        var header = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, Padding = new Padding(0, 0, 0, 8) };
+        header.Controls.Add(new Label { Text = "Внешняя камера для отслеживания тела", AutoSize = true, ForeColor = Color.White, Font = new Font("Segoe UI", 12, FontStyle.Bold), Padding = new Padding(0, 7, 12, 0) });
+        for (var i = 0; i < 6; i++) _pcCameraIndex.Items.Add("Камера " + i);
+        _pcCameraIndex.SelectedIndex = 0;
+        header.Controls.Add(_pcCameraIndex);
+        _pcCameraToggle.Click += async (_, _) => { if (_pcCameraStop is null) await StartPcCameraAsync(); else await StopPcCameraAsync(); };
+        header.Controls.Add(_pcCameraToggle); layout.Controls.Add(header, 0, 0); layout.Controls.Add(_pcCamera, 0, 1);
+        layout.Controls.Add(new Label { Text = "Предпросмотр веб-камеры ПК. Следующий этап подключит оценку позы тела и передачу суставов в VR runtime.", AutoSize = true, ForeColor = Color.LightSteelBlue, Padding = new Padding(0, 8, 0, 0) }, 0, 2);
+        page.Controls.Add(layout); return page;
+    }
+
+    private async Task StartPcCameraAsync()
+    {
+        var index = Math.Max(0, _pcCameraIndex.SelectedIndex);
+        _pcCameraStop = new CancellationTokenSource();
+        _pcCameraIndex.Enabled = false; _pcCameraToggle.Text = "Остановить веб-камеру";
+        var token = _pcCameraStop.Token;
+        _pcCameraTask = Task.Run(async () =>
+        {
+            using var capture = new VideoCapture(index, VideoCaptureAPIs.DSHOW);
+            if (!capture.IsOpened()) { UpdateUi(() => { Log("Не удалось открыть веб-камеру " + index); }); return; }
+            capture.Set(VideoCaptureProperties.FrameWidth, 1280); capture.Set(VideoCaptureProperties.FrameHeight, 720);
+            using var frame = new Mat();
+            while (!token.IsCancellationRequested)
+            {
+                if (!capture.Read(frame) || frame.Empty()) { await Task.Delay(50, token).ConfigureAwait(false); continue; }
+                var bitmap = BitmapConverter.ToBitmap(frame);
+                UpdateUi(() => { var old = _pcCamera.Image; _pcCamera.Image = bitmap; old?.Dispose(); });
+                await Task.Delay(33, token).ConfigureAwait(false);
+            }
+        }, token);
+        try { await _pcCameraTask; } catch (OperationCanceledException) { } catch (Exception ex) { Log("Ошибка веб-камеры ПК: " + ex.Message); }
+        _pcCameraStop?.Dispose(); _pcCameraStop = null; _pcCameraIndex.Enabled = true; _pcCameraToggle.Text = "Запустить веб-камеру";
+    }
+
+    private async Task StopPcCameraAsync()
+    {
+        _pcCameraStop?.Cancel();
+        if (_pcCameraTask is not null) { try { await _pcCameraTask; } catch (OperationCanceledException) { } catch (Exception ex) { Log(ex.Message); } }
+        _pcCameraStop?.Dispose(); _pcCameraStop = null; _pcCameraIndex.Enabled = true; _pcCameraToggle.Text = "Запустить веб-камеру";
+        var old = _pcCamera.Image; _pcCamera.Image = null; old?.Dispose();
+    }
+
+    private TabPage BuildSettingsTab()
+    {
+        var page = new TabPage("VR и управление") { BackColor = BackColor, AutoScroll = true };
+        var stack = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.TopDown, WrapContents = false, AutoScroll = true, Padding = new Padding(20) };
+        stack.Controls.Add(Section("Пространственный оверлей")); stack.Controls.Add(_enableOverlay);
+        stack.Controls.Add(new Label { Text = "Профиль меню. Фактическое отображение в шлеме появится после реализации VR display/runtime.", AutoSize = true, ForeColor = Color.LightSteelBlue });
+        stack.Controls.Add(Section("Передвижение"));
+        _locomotionMode.Items.AddRange(new object[] { "Arm Swing", "Walk in Place", "Hybrid", "Отключено" }); _locomotionMode.SelectedIndex = 0;
+        stack.Controls.Add(new Label { Text = "Режим передвижения", AutoSize = true, ForeColor = Color.White }); stack.Controls.Add(_locomotionMode);
+        stack.Controls.Add(_enableArmSwing); stack.Controls.Add(_enableWalkInPlace);
+        stack.Controls.Add(LabeledSlider("Чувствительность Arm Swing", _armSensitivity));
+        stack.Controls.Add(LabeledSlider("Чувствительность ходьбы", _walkSensitivity));
+        stack.Controls.Add(LabeledSlider("Сглаживание движения", _motionSmoothing));
+        stack.Controls.Add(new Label { Text = "Это параметры будущего motion engine, пока они не управляют движением в игре.", AutoSize = true, ForeColor = Color.Khaki });
+        stack.Controls.Add(Section("Сеть и качество"));
+        stack.Controls.Add(new Label { Text = "Телеметрия: UDP 9000 · Видео телефона: TCP 9001. Используйте частную сеть; не открывайте порты в интернет.", AutoSize = true, ForeColor = Color.LightSteelBlue, MaximumSize = new Size(800, 0) });
+        stack.Controls.Add(new Label { Text = "Рекомендуется подключить ПК к роутеру по Ethernet, телефон — по Wi-Fi того же роутера.", AutoSize = true, ForeColor = Color.LightSteelBlue });
+        page.Controls.Add(stack); return page;
+    }
+
+    private static Label Section(string text) => new() { Text = text, AutoSize = true, ForeColor = Color.FromArgb(73, 226, 178), Font = new Font("Segoe UI", 14, FontStyle.Bold), Padding = new Padding(0, 18, 0, 6) };
+    private static Control LabeledSlider(string title, TrackBar slider) { var panel = new FlowLayoutPanel { FlowDirection = FlowDirection.TopDown, WrapContents = false, AutoSize = true }; panel.Controls.Add(new Label { Text = title, AutoSize = true, ForeColor = Color.White }); panel.Controls.Add(slider); return panel; }
     private static Label MakeValue(string value) => new()
     {
         Text = value, AutoSize = true, ForeColor = Color.White,
@@ -291,7 +381,9 @@ internal sealed class DashboardForm : Form
     {
         _stop?.Cancel();
         _tcpListener?.Stop();
+        _pcCameraStop?.Cancel();
         _camera.Image?.Dispose();
+        _pcCamera.Image?.Dispose();
         base.OnFormClosing(e);
     }
 }
