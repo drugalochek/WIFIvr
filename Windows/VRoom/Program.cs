@@ -578,7 +578,11 @@ internal sealed class DashboardForm : Form
                             }
                             var handsText = handCount == 0 ? "Руки не обнаружены" : string.Join(" | ", descriptions);
                             var skeletonSnapshot = skeletons.ToArray();
-                            var controllerInput = JsonSerializer.SerializeToUtf8Bytes(new { left = leftPinch, right = rightPinch });
+                            // Forward the complete v2 packet so the native driver can update the
+                            // OpenVR 31-bone skeleton. v1 remains accepted as legacy input.
+                            var controllerInput = version >= 2
+                                ? packet.Buffer
+                                : JsonSerializer.SerializeToUtf8Bytes(new { left = leftPinch, right = rightPinch });
                             _ = _handDriverRelay.SendAsync(controllerInput, controllerInput.Length,
                                 new IPEndPoint(IPAddress.Loopback, 9005));
                             UpdateUi(() => { _hands.Text = handsText; _handSkeleton = skeletonSnapshot; _camera.Invalidate(); });
