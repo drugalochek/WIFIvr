@@ -249,6 +249,7 @@ private:
         }
     }
 
+public:
     void SubmitFrame(vr::SharedTextureHandle_t sharedHandle) {
         if (!d3dDevice_ || sharedHandle == INVALID_SHARED_TEXTURE_HANDLE) return;
         HRESULT comResult = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
@@ -349,6 +350,7 @@ private:
         frameCondition_.notify_one();
     }
 
+private:
     void ReceiveLoop() {
         static const std::regex pattern(
             R"("orientation"\s*:\s*\{\s*"x"\s*:\s*([-+0-9.eE]+)\s*,\s*"y"\s*:\s*([-+0-9.eE]+)\s*,\s*"z"\s*:\s*([-+0-9.eE]+)\s*,\s*"w"\s*:\s*([-+0-9.eE]+))");
