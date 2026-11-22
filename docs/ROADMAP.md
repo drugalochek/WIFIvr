@@ -10,6 +10,10 @@
 - [x] Android-to-Windows camera preview stream over TCP
 - [x] Windows camera preview panel
 - [x] Clamp normalized image-space hand coordinates at the Android sender
+- [x] Add Windows PC webcam preview mode
+- [x] Add persisted desktop settings profile for overlay and locomotion
+- [x] Add automatic reconnect for the Android camera uplink
+- [ ] Add full-body pose estimation from the PC webcam and publish joint telemetry
 - [ ] Measure packet rate, loss, and end-to-end latency on real hardware
 
 ## Milestone 1 — VR runtime
@@ -25,6 +29,7 @@
 - [ ] Encode and stream video to Android over a low-latency transport
 - [ ] Render separate left/right eye views on Android
 - [ ] Add lens distortion and headset geometry calibration
+- [ ] Render and interact with a spatial overlay in the Android VR view
 
 ## Milestone 3 — positional tracking and quality
 - [ ] Add reliable 6DoF position tracking or supported external tracking
