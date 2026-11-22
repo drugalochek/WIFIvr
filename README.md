@@ -64,8 +64,6 @@ Overlay placement, scale, distance, locomotion mode, sensitivity, and smoothing 
 The Android camera uplink reconnects to TCP port 9001 when VRoom Desktop becomes available again.
 
 
-## Skeleton tracking and FOV
+## Skeleton tracking
 
 Android now runs MediaPipe Hand Landmarker and Pose Landmarker on the phone camera. It sends 21 landmarks per detected hand and up to 33 body landmarks over UDP 9000. VRoom Desktop draws the hand and body skeletons over the received phone-camera preview. This is 2D image-space visualization, not calibrated 3D room tracking. The optional PC webcam tab remains a preview-only capture path; PC-webcam body inference is not implemented yet.
-
-The Android headset preview includes a persistent FOV control from 60° to 110°. It changes the preview crop/scale for visual adjustment; it is not a replacement for physical lens calibration or the eventual PC-to-phone stereo display path.
