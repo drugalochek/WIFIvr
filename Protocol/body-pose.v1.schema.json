@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://vroom.local/protocol/body-pose.v1.schema.json",
+  "title": "VRoom body pose packet",
+  "type": "object",
+  "required": [
+    "type",
+    "version",
+    "timestampNs",
+    "landmarks"
+  ],
+  "properties": {
+    "type": {
+      "const": "body_pose"
+    },
+    "version": {
+      "const": 1
+    },
+    "timestampNs": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "landmarks": {
+      "type": "array",
+      "minItems": 0,
+      "maxItems": 33,
+      "items": {
+        "type": "object",
+        "required": [
+          "x",
+          "y",
+          "z"
+        ],
+        "properties": {
+          "x": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "y": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "z": {
+            "type": "number"
+          },
+          "visibility": {
+            "type": "number"
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}
