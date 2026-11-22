@@ -133,6 +133,14 @@ class MainActivity : Activity(), SensorEventListener {
             background = rounded(Color.rgb(48, 67, 99), 16)
             setOnClickListener { startActivity(Intent(this@MainActivity, HandSetupActivity::class.java)) }
         }
+        val roomButton = Button(this).apply {
+            text = getString(R.string.room_setup)
+            isAllCaps = false
+            textSize = 15f
+            setTextColor(Color.WHITE)
+            background = rounded(Color.rgb(48, 67, 99), 16)
+            setOnClickListener { startActivity(Intent(this@MainActivity, RoomSetupActivity::class.java)) }
+        }
 
         root.addView(brand, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
         root.addView(tagline, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { bottomMargin = dp(30) })
@@ -143,6 +151,7 @@ class MainActivity : Activity(), SensorEventListener {
         panel.addView(connectButton, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(54)).apply { topMargin = dp(14) })
         panel.addView(status)
         root.addView(handsButton, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(54)).apply { topMargin = dp(16) })
+        root.addView(roomButton, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(54)).apply { topMargin = dp(10) })
         setContentView(root)
     }
 
