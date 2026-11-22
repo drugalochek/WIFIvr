@@ -25,8 +25,9 @@ The checkboxes below distinguish implemented code from hardware validation. A fe
 - [x] Compile an initial SteamVR/OpenVR server driver registering a virtual VRoom HMD
 - [x] Forward phone IMU orientation through the Windows host to the OpenVR driver
 - [x] Register a separate OpenVR display-redirect device
-- [ ] Add two OpenVR tracked-controller devices with valid input components
-- [ ] Convert hand landmarks into calibrated controller poses and gestures
+- [x] Register left/right OpenVR controller devices with trigger, grip, and haptic input components
+- [x] Relay phone hand landmarks through the Windows host and expose thumb/index pinch as analog trigger and click inputs
+- [ ] Convert hand landmarks into calibrated controller poses and reliable spatial gestures
 - [ ] Add neutral-pose calibration and coordinate-axis mapping
 - [ ] Validate controller poses and inputs in SteamVR's device view and test applications
 - [ ] Validate compatibility with selected PC VR titles
@@ -66,7 +67,7 @@ The checkboxes below distinguish implemented code from hardware validation. A fe
 
 ## Engineering constraints
 - Keep control telemetry separate from video transport.
-- Camera landmarks are image-space points, not calibrated room-space controller poses.
+- Camera landmarks are image-space points, not calibrated room-space controller poses. Current pinch input is a 2D gesture signal and must not be interpreted as controller position.
 - A phone IMU provides orientation, not reliable 6DoF position by itself.
 - A single RGB webcam's 2D pose output must not be presented as measured 3D tracking.
 - Do not inject locomotion from noisy or uncalibrated body estimates.
