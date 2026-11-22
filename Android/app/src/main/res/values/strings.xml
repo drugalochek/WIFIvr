@@ -47,5 +47,11 @@
     <string name="switch_to_front_camera">Switch to front camera</string>
     <string name="switch_to_back_camera">Switch to rear camera</string>
     <string name="front_camera_active">Front camera active · show your hands</string>
+    <string name="tracking_fps">Tracking rate: %.1f FPS</string>
+    <string name="switch_to_headset_mode">Switch to VR headset view</string>
+    <string name="switch_to_phone_mode">Switch to phone camera view</string>
+    <string name="headset_mode_note">Headset view is a landscape camera preview, not stereoscopic VR yet.</string>
+    <string name="phone_mode_note">Phone camera view active.</string>
+    <string name="room_scan_not_ready">Live room scanning is not available in this build yet. This screen only checks ARCore support; it does not scan walls or create a play boundary.</string>
     <string name="front_camera_unavailable">The front camera is unavailable on this device.</string>
 </resources>
