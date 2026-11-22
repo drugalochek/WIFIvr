@@ -10,7 +10,7 @@
 - Windows has a desktop dashboard for receiving head/hand telemetry and visualizing the PC-webcam skeleton.
 - Android sends a throttled JPEG camera preview to Windows over TCP port 9001.
 - The Android **VR session** runs the phone IMU, MediaPipe hand tracking, camera uplink, and stereo-display receiver together in one Activity. This prevents the camera/hand tracker from being paused when the display activity opens.
-- The SteamVR OpenVR driver registers a virtual HMD, a display-redirect device, and left/right hand endpoints with OpenVR skeletal input components. Hand-pose v2 is relayed intact to the driver, which maps MediaPipe hand-centred landmarks into the 31-bone OpenVR hierarchy and updates both skeletal motion ranges. No trigger/grip values are synthesized. The driver now publishes HMD-relative wrist root poses using a monocular palm-size estimate (nominal 85 mm palm width and assumed camera focal scale). This is an approximate bootstrap, not calibrated depth tracking.
+- The SteamVR OpenVR driver registers a virtual HMD, a display-redirect device, and left/right hand endpoints with OpenVR skeletal input components. Hand-pose v2 is relayed to the driver, which maps MediaPipe hand-centred landmarks into the 31-bone OpenVR hierarchy and updates both skeletal motion ranges. For controller-oriented VR titles, a detected thumb-index pinch supplies the analog trigger value/click and a detected fist supplies the squeeze value/click. These are gesture-derived inputs, not physical controller buttons; there is no thumbstick yet. The driver publishes HMD-relative wrist root poses using a monocular palm-size estimate (nominal 85 mm palm width and assumed camera focal scale). This is an approximate bootstrap, not calibrated depth tracking.
 - The display-redirect path captures the SteamVR compositor texture, reads it back through D3D11, JPEG-encodes it, and sends it to the Windows host over loopback TCP 9004.
 - The Windows host relays those frames over TCP 9002 to Android. The Android VR display crops the side-by-side frame into left/right eye images.
 
@@ -18,7 +18,7 @@
 
 ## What is not implemented yet
 
-- Calibrated room-space hand poses and validated rendered articulated hand meshes. The current tracked hand root is only a monocular palm-width estimate with a nominal 85 mm scale and assumed camera focal length. It is not a measured 6DoF hand pose. OpenVR hand endpoints are controller-class tracked devices because that is the available SteamVR skeletal-input path; they do not synthesize trigger/grip buttons.
+- Calibrated room-space hand poses and validated rendered articulated hand meshes. The current tracked hand root is only a monocular palm-width estimate with a nominal 85 mm scale and assumed camera focal length. It is not a measured 6DoF hand pose. OpenVR hand endpoints are controller-class tracked devices; pinch and fist gestures are currently mapped to trigger and squeeze, but there is no thumbstick, menu/A/B input, or validated Roblox interaction profile. Roblox compatibility remains untested.
 - Calibrated 3D body/hand tracking. MoveNet output from one PC webcam is 2D image-space keypoints only.
 - Reliable 6DoF head position. The phone IMU supplies orientation, not absolute position.
 - Working arm-swing or walk-in-place locomotion injected into SteamVR.
@@ -26,7 +26,7 @@
 - OpenXR support.
 - Validated compatibility with individual SteamVR games.
 
-The current system is an early OpenVR integration with an approximate monocular hand-root estimate, not a finished or universally compatible VR headset. Roblox and other games only work when their own VR support permits it.
+The current system is an early OpenVR integration with an approximate monocular hand-root estimate, not a finished or universally compatible VR headset. Roblox uses OpenXR and expects a compatible controller interaction profile; VRoom's Oculus Touch remapping is a compatibility attempt, not a verified guarantee. Test Roblox's VR mode and SteamVR input bindings on hardware before claiming support.
 
 ## Tracking protocol
 
