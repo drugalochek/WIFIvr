@@ -534,9 +534,8 @@ vr::EVRInitError VRoomHmd::Activate(uint32_t objectId) {
         container, vr::Prop_DriverProvidedChaperoneJson_String, chaperoneJson.c_str());
     properties->SetUint64Property(
         container, vr::Prop_CurrentUniverseId_Uint64, kVRoomUniverseId);
-    properties->SetInt32Property(
-        container, vr::Prop_Driver_RecenterSupport_Int32,
-        vr::k_EVRDriverRecenterSupport_SteamVRHandlesRecenter);
+    // The recenter-support property was removed from current OpenVR headers;
+    // leave SteamVR's default recenter behavior enabled.
     vr::VRDriverLog()->Log("VRoom: standing universe and chaperone data published");
     vr::VRDriverLog()->Log("VRoom: HMD activated");
     return vr::VRInitError_None;
