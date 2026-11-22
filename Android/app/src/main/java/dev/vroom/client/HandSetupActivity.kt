@@ -201,7 +201,7 @@ class HandSetupActivity : ComponentActivity() {
         val root = FrameLayout(this).apply { setBackgroundColor(Color.rgb(11, 16, 32)) }
         previewView = PreviewView(this).apply { scaleType = PreviewView.ScaleType.FIT_CENTER }
         overlay = HandOverlayView(this)
-        overlay.setFovDegrees(viewFovDegrees)
+        overlay.fovDegrees = viewFovDegrees
         val infoPanel = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(18), dp(14), dp(18), dp(14))
@@ -475,9 +475,8 @@ private class HandOverlayView(context: android.content.Context) : View(context) 
     @Volatile private var handPoints: List<List<Pair<Float, Float>>> = emptyList()
     @Volatile private var cameraFrame: Bitmap? = null
     @Volatile private var stereoMode = false
-    @Volatile private var fovDegrees = 90
-
-    fun setFovDegrees(value: Int) { fovDegrees = value.coerceIn(60, 110); postInvalidate() }
+    @Volatile var fovDegrees = 90
+        set(value) { field = value.coerceIn(60, 110); postInvalidate() }
     fun updateFrame(bitmap: Bitmap) { cameraFrame = bitmap; postInvalidate() }
     fun updateHands(value: List<List<Pair<Float, Float>>>) { handPoints = value; postInvalidate() }
     fun setStereoMode(enabled: Boolean) { stereoMode = enabled; postInvalidate() }
