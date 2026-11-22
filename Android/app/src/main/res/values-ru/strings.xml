@@ -13,6 +13,7 @@
     <string name="streaming_to">Передача ориентации головы на %1$s:9000</string>
     <string name="disconnected">Отключено.</string>
     <string name="hand_tracking">Настроить отслеживание рук</string>
+    <string name="room_setup">Комната и игровая зона</string>
     <string name="hand_tracking_title">Настройка отслеживания рук</string>
     <string name="camera_starting">Запуск камеры…</string>
     <string name="camera_permission_needed">Для отслеживания рук нужен доступ к камере.</string>
@@ -25,4 +26,18 @@
     <string name="back_camera_active">Задняя камера включена · покажи до двух рук</string>
     <string name="camera_start_error">Не удалось запустить камеру: %1$s</string>
     <string name="camera_frame_error">Ошибка обработки кадра: %1$s</string>
+    <string name="room_title">Твоя игровая зона</string>
+    <string name="room_intro">Настройки комнаты сохраняются на этом телефоне. Каждый пользователь может настроить свою игровую зону.</string>
+    <string name="ar_checking">Проверяем поддержку пространственного отслеживания…</string>
+    <string name="ar_supported">ARCore поддерживается. Можно включить отслеживание положения по камере.</string>
+    <string name="ar_unsupported">ARCore не поддерживается. Ориентация головы продолжит работать, но для отслеживания перемещения понадобится другое устройство или трекер.</string>
+    <string name="ar_error">Не удалось проверить ARCore: %1$s</string>
+    <string name="room_width">Ширина комнаты (метры)</string>
+    <string name="room_length">Длина комнаты (метры)</string>
+    <string name="room_center">Размеры задают черновую прямоугольную безопасную зону, а не результат сканирования стен.</string>
+    <string name="room_save">Сохранить игровую зону</string>
+    <string name="room_saved">Зона сохранена: %1$.1f × %2$.1f м. Предупреждения о границе заработают после подключения позиционного трекинга.</string>
+    <string name="room_invalid">Укажи размеры от 1 до 20 метров.</string>
+    <string name="room_current">Сохранённая зона: %1$.1f × %2$.1f м</string>
+    <string name="position_not_active">Позиционное отслеживание пока не запущено. Не полагайся на эту черновую границу как на защиту от столкновений.</string>
 </resources>
