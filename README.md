@@ -7,16 +7,18 @@
 - Android app identity and project display name: VRoom.
 - Android reads the phone rotation vector and sends head orientation over UDP.
 - MediaPipe detects up to two hands locally on the phone and sends 21 landmarks per hand to the PC.
-- Windows now has a desktop dashboard for receiving and inspecting head/hand telemetry.
-- Windows validates incoming packet structure and displays the latest tracking state.
+- Windows has a desktop dashboard for receiving head/hand telemetry.
+- Android sends a throttled JPEG camera preview to Windows over TCP port 9001.
+- Windows displays the incoming phone camera stream alongside tracking telemetry.
 
 **Important:** this is not yet a SteamVR/OpenXR headset driver. PC game capture, low-latency stereo video streaming, calibrated per-eye rendering, 6DoF positional tracking, and virtual controller registration remain future integration milestones.
 
 ## Tracking protocol
 
-The Windows app receives UDP telemetry on port 9000:
+The Windows app receives UDP telemetry on port 9000 and a length-prefixed JPEG camera stream over TCP port 9001:
 - `head_pose` v1 — normalized device orientation quaternion.
 - `hand_pose` v1 — up to two hands, each with 21 image-space landmarks.
+- TCP 9001 — JPEG camera frames, each prefixed by a 4-byte big-endian frame length. The current Android preview sender targets up to 10 FPS.
 
 The phone clamps x/y image coordinates to [0, 1]. Landmark z is relative model depth and may be negative. The receiver stores/display the latest telemetry; it does not infer room-space controller poses from 2D camera landmarks.
 
@@ -28,7 +30,7 @@ The phone clamps x/y image coordinates to [0, 1]. Landmark z is relative model d
 4. Enter that address in VRoom on Android and connect.
 5. Allow VRoom through Windows Firewall on private networks only.
 
-The receiver listens on UDP port 9000. Do not expose it to the public internet.
+The Windows host listens on UDP 9000 and TCP 9001. Start VRoom Desktop before opening the phone hand-tracking screen so the camera stream can connect. Allow both ports through Windows Firewall on private networks only. Do not expose them to the public internet.
 
 ## Builds
 
