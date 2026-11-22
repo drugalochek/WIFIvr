@@ -37,11 +37,14 @@ class OpenVrSkeletonContractTests(unittest.TestCase):
     def test_stale_hand_pose_is_cleared(self):
         self.assertIn("<= 300", self.header)
         self.assertIn("ClearSkeleton()", self.driver)
+        self.assertIn("rootPositionHead", self.driver)
+        self.assertIn("RunFrame(pose)", self.driver)
 
     def test_android_emits_smoothed_v2_world_landmarks(self):
         self.assertIn('.put("version", 2)', self.android)
         self.assertIn("worldLandmarks()", self.android)
         self.assertIn("smoothedWorldHands", self.android)
+        self.assertIn('"rootPosition", rootPosition', self.android)
 
     def test_windows_accepts_and_relays_full_v2_packet(self):
         self.assertIn('case ("hand_pose", 2):', self.windows)
