@@ -79,6 +79,8 @@ class HandSetupActivity : ComponentActivity() {
     private val cameraFrameInFlight = AtomicBoolean(false)
     @Volatile private var cameraStreamSocket: Socket? = null
     @Volatile private var cameraStreamOutput: DataOutputStream? = null
+    @Volatile private var analysisWidth = 640
+    @Volatile private var analysisHeight = 360
     private var lastCameraSendMs = 0L
 
     private val permissionRequest =
@@ -364,13 +366,28 @@ class HandSetupActivity : ComponentActivity() {
                     (1..4).all { isFingerExtended(filtered, it * 4) } -> "open_palm"
                     else -> "unknown"
                 }
+                val frameWidth = analysisWidth.toFloat().coerceAtLeast(1f)
+                val frameHeight = analysisHeight.toFloat().coerceAtLeast(1f)
+                val palmDx = (filtered[5][0] - filtered[17][0]) * frameWidth
+                val palmDy = (filtered[5][1] - filtered[17][1]) * frameHeight
+                val palmPixels = kotlin.math.sqrt(palmDx * palmDx + palmDy * palmDy).coerceAtLeast(1f)
+                val focalPixels = frameWidth * 0.92f
+                val depthMeters = (focalPixels * 0.085f / palmPixels).coerceIn(0.18f, 1.50f)
+                val cameraX = (filtered[0][0] * frameWidth - frameWidth * 0.5f) * depthMeters / focalPixels
+                val cameraY = (filtered[0][1] * frameHeight - frameHeight * 0.5f) * depthMeters / focalPixels
+                val rootPosition = JSONObject()
+                    .put("x", cameraX.toDouble())
+                    .put("y", (-cameraY + 0.02f).toDouble())
+                    .put("z", (-depthMeters - 0.08f).toDouble())
+
                 handsJson.put(JSONObject()
                     .put("handedness", handedness)
                     .put("confidence", (category?.score() ?: 0f).coerceIn(0f, 1f).toDouble())
                     .put("gesture", gesture)
                     .put("pinch", pinch.toDouble())
                     .put("landmarks", imagePoints)
-                    .put("worldLandmarks", worldPoints))
+                    .put("worldLandmarks", worldPoints)
+                    .put("rootPosition", rootPosition))
             }
 
             // Forget a missing side immediately so reacquisition cannot blend with a stale pose.
@@ -442,6 +459,8 @@ class HandSetupActivity : ComponentActivity() {
             // Keep the sensor image unmirrored in both phone and headset modes.
             // Hand landmarks are generated from this exact same bitmap, so they stay aligned.
             val modelBitmap = rotated
+            analysisWidth = modelBitmap.width
+            analysisHeight = modelBitmap.height
             overlay.updateFrame(modelBitmap)
             sendCameraFrame(modelBitmap)
             val mpImage = BitmapImageBuilder(modelBitmap).build()
