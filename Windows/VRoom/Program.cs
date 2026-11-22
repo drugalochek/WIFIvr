@@ -25,6 +25,7 @@ internal static class Program
 internal sealed class DashboardForm : Form
 {
     private readonly UdpClient _driverRelay = new();
+    private readonly UdpClient _handDriverRelay = new();
     private readonly Label _status = MakeValue("Остановлено");
     private readonly Label _head = MakeValue("Нет данных");
     private readonly Label _hands = MakeValue("Нет данных");
@@ -227,8 +228,7 @@ internal sealed class DashboardForm : Form
                                     ? $"Веб-камера ПК · 17 суставов · {pose.AverageConfidence:P0}"
                                     : "Тело не обнаружено";
                                 _pcCamera.Invalidate();
-                            });
-                        }
+                            });                        }
 
                         var bitmap = BitmapConverter.ToBitmap(frame);
                         UpdateUi(() =>
@@ -457,8 +457,7 @@ internal sealed class DashboardForm : Form
                 using var phone = await listener.AcceptTcpClientAsync(token);
                 phone.NoDelay = true;
                 Log("Подключён VR-экран телефона: " + phone.Client.RemoteEndPoint);
-                try
-                {
+                try                {
                     using var phoneStream = phone.GetStream();
                     using var driver = new TcpClient();
                     while (!token.IsCancellationRequested)
@@ -553,6 +552,8 @@ internal sealed class DashboardForm : Form
                             if (handCount > 2) throw new InvalidDataException("Некорректный список рук");
                             var descriptions = new List<string>();
                             var skeletons = new List<PointF[]>();
+                            var leftPinch = -1f;
+                            var rightPinch = -1f;
                             foreach (var hand in array.EnumerateArray())
                             {
                                 var label = RequiredString(hand, "handedness");
@@ -560,6 +561,15 @@ internal sealed class DashboardForm : Form
                                 var points = hand.GetProperty("landmarks");
                                 if (points.ValueKind != JsonValueKind.Array || points.GetArrayLength() != 21) throw new InvalidDataException("Ожидалось 21 точка на руку");
                                 var wrist = points[0];
+                                var thumbTip = points[4];
+                                var indexTip = points[8];
+                                var pinchDx = Finite(thumbTip, "x") - Finite(indexTip, "x");
+                                var pinchDy = Finite(thumbTip, "y") - Finite(indexTip, "y");
+                                var pinchDistance = MathF.Sqrt(pinchDx * pinchDx + pinchDy * pinchDy);
+                                // A close thumb/index pair is exposed as an analog trigger.
+                                // This is 2D gesture input only; it is not a tracked 3D controller pose.
+                                var pinch = Math.Clamp((0.22f - pinchDistance) / 0.17f, 0f, 1f);
+                                if (label == "Left") leftPinch = pinch; else rightPinch = pinch;
                                 var skeleton = new PointF[21];
                                 var pointIndex = 0;
                                 descriptions.Add($"{label}: запястье ({Finite(wrist, "x"):F2}, {Finite(wrist, "y"):F2}, {Finite(wrist, "z"):F2})");
@@ -568,6 +578,9 @@ internal sealed class DashboardForm : Form
                             }
                             var handsText = handCount == 0 ? "Руки не обнаружены" : string.Join(" | ", descriptions);
                             var skeletonSnapshot = skeletons.ToArray();
+                            var controllerInput = JsonSerializer.SerializeToUtf8Bytes(new { left = leftPinch, right = rightPinch });
+                            _ = _handDriverRelay.SendAsync(controllerInput, controllerInput.Length,
+                                new IPEndPoint(IPAddress.Loopback, 9005));
                             UpdateUi(() => { _hands.Text = handsText; _handSkeleton = skeletonSnapshot; _camera.Invalidate(); });
                             break;
                         }
@@ -678,6 +691,7 @@ internal sealed class DashboardForm : Form
         _camera.Image?.Dispose();
         _pcCamera.Image?.Dispose();
         _driverRelay.Dispose();
+        _handDriverRelay.Dispose();
         base.OnFormClosing(e);
     }
 }
