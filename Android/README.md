@@ -1,4 +1,4 @@
-# WiFiVR Android client
+# VRoom Android client
 
 The first Android client milestone is implemented in Kotlin.
 
@@ -21,10 +21,10 @@ APK output: `app/build/outputs/apk/debug/app-debug.apk`.
 1. Connect the phone and Windows PC to the same trusted local Wi-Fi network.
 2. Start the Windows receiver on the PC.
 3. Find the PC's local IPv4 address.
-4. Open WiFiVR on the phone, enter the PC address, and tap **Connect**.
+4. Open VRoom on the phone, enter the PC address, and tap **Connect**.
 5. Allow the Windows firewall prompt for the receiver on private networks.
 
-This milestone sends orientation only. It does not yet stream PC video, render a stereo headset view, track hands, or provide an OpenXR runtime.
+This milestone sends head orientation and includes a camera-based hand landmark preview. It does not yet stream PC video, render a stereo headset view, provide room-scale positional tracking, or provide an OpenXR runtime.
 
 ## Hand camera check
 
