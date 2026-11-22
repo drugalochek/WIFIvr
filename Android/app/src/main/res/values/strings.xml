@@ -58,7 +58,7 @@
     <string name="tracking_fps">Tracking rate: %.1f FPS</string>
     <string name="switch_to_headset_mode">Switch to VR headset view</string>
     <string name="switch_to_phone_mode">Switch to phone camera view</string>
-    <string name="headset_mode_note">Headset view is a landscape camera preview, not stereoscopic VR yet.</string>
+    <string name="headset_mode_note">Side-by-side duplicated camera view. Depth-separated stereo rendering is not implemented yet.</string>
     <string name="phone_mode_note">Phone camera view active.</string>
     <string name="front_camera_unavailable">The front camera is unavailable on this device.</string>
 </resources>
