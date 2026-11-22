@@ -2,5 +2,6 @@
   "alwaysActivate": true,
   "name": "vroom",
   "directory": "",
-  "resourceOnly": false
+  "resourceOnly": false,
+  "redirectsDisplay": true
 }
