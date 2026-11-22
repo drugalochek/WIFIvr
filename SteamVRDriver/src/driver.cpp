@@ -355,7 +355,14 @@ public:
         const bool uninitializeCom = SUCCEEDED(comResult);
         Microsoft::WRL::ComPtr<ID3D11Texture2D> source;
         const HANDLE shared = reinterpret_cast<HANDLE>(static_cast<uintptr_t>(sharedHandle));
-        if (FAILED(d3dDevice_->OpenSharedResource(shared, IID_PPV_ARGS(&source)))) {
+        const HRESULT openResult = d3dDevice_->OpenSharedResource(shared, IID_PPV_ARGS(&source));
+        if (FAILED(openResult)) {
+            static std::atomic<bool> loggedOpenFailure{false};
+            if (!loggedOpenFailure.exchange(true)) {
+                char message[192]{};
+                sprintf_s(message, "VRoom: D3D11 OpenSharedResource failed (HRESULT 0x%08X)", static_cast<unsigned>(openResult));
+                vr::VRDriverLog()->Log(message);
+            }
             if (uninitializeCom) CoUninitialize();
             return;
         }
@@ -378,7 +385,14 @@ public:
         }
         d3dContext_->CopyResource(staging.Get(), source.Get());
         D3D11_MAPPED_SUBRESOURCE mapped{};
-        if (FAILED(d3dContext_->Map(staging.Get(), 0, D3D11_MAP_READ, 0, &mapped))) {
+        const HRESULT mapResult = d3dContext_->Map(staging.Get(), 0, D3D11_MAP_READ, 0, &mapped);
+        if (FAILED(mapResult)) {
+            static std::atomic<bool> loggedMapFailure{false};
+            if (!loggedMapFailure.exchange(true)) {
+                char message[160]{};
+                sprintf_s(message, "VRoom: D3D11 staging texture Map failed (HRESULT 0x%08X)", static_cast<unsigned>(mapResult));
+                vr::VRDriverLog()->Log(message);
+            }
             if (uninitializeCom) CoUninitialize();
             return;
         }
@@ -440,7 +454,22 @@ public:
             }
         }
         if (uninitializeCom) CoUninitialize();
-        if (jpeg.empty()) return;
+        if (jpeg.empty()) {
+            static std::atomic<bool> loggedEncodeFailure{false};
+            if (!loggedEncodeFailure.exchange(true)) {
+                char message[160]{};
+                sprintf_s(message, "VRoom: compositor frame JPEG encoding produced no data (HRESULT 0x%08X)", static_cast<unsigned>(hr));
+                vr::VRDriverLog()->Log(message);
+            }
+            return;
+        }
+        static std::atomic<bool> loggedFirstEncodedFrame{false};
+        if (!loggedFirstEncodedFrame.exchange(true)) {
+            char message[160]{};
+            sprintf_s(message, "VRoom: first compositor frame encoded (%ux%u, %zu JPEG bytes)",
+                      desc.Width, desc.Height, jpeg.size());
+            vr::VRDriverLog()->Log(message);
+        }
         {
             std::lock_guard<std::mutex> lock(frameMutex_);
             latestFrame_ = std::move(jpeg);
@@ -603,6 +632,9 @@ vr::DriverPose_t VRoomDisplayRedirect::GetPose() {
 
 void VRoomDisplayRedirect::Present(const vr::PresentInfo_t* info, uint32_t size) {
     if (!info || size < sizeof(vr::PresentInfo_t)) return;
+    static std::atomic<bool> loggedFirstPresent{false};
+    if (!loggedFirstPresent.exchange(true))
+        vr::VRDriverLog()->Log("VRoom: SteamVR compositor called display Present; video capture path is active");
     // Per OpenVR's contract, Present must queue work and return quickly.
     // The potentially blocking GPU readback/JPEG encode happens in WaitForPresent.
     std::lock_guard<std::mutex> lock(presentMutex_);
