@@ -34,6 +34,6 @@ The saved rectangle is configuration data, not a detected room mesh or a safety 
 
 ## Hand camera check
 
-From the home screen tap **Проверка рук и камеры** and grant camera permission. Hold one or both hands in view; the overlay draws the 21 landmarks and finger connections. The CI workflow downloads the official MediaPipe hand model into the build assets before packaging the APK.
+From the home screen tap **Проверка рук и камеры** and grant camera permission. The app runs MediaPipe Hand Landmarker (21 landmarks per hand) and Pose Landmarker on the same rear-camera frames. The overlay draws fingers plus the visible upper-body arm chain: shoulder → elbow → wrist. CI downloads both official model assets before packaging the APK.
 
-The displayed x/y values are normalized image coordinates and z is relative depth from the hand landmark model. A single RGB camera does **not** provide reliable absolute room-space position or full 3D hand tracking; this screen is a visual detection/alignment check, not a calibrated VR controller yet.
+This is whole visible upper-arm pose estimation, not literally every point on the skin or a complete volumetric arm mesh. Pose landmarks are 2D image coordinates with model-estimated relative depth; they are not calibrated room-space controller coordinates. If an arm leaves the camera view, its landmarks become unavailable rather than being treated as a reliable live position. Camera-only gesture recognition can provide virtual inputs, but it cannot read a physical side trigger/button without a separate controller or button sensor. Hand/controller packets are not yet sent to the Windows receiver.
