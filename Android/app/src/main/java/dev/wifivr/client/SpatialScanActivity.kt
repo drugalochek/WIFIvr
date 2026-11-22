@@ -727,13 +727,40 @@ class SpatialScanActivity : Activity(), GLSurfaceView.Renderer {
             }
             // Also export a standard Wavefront OBJ so the reconstructed triangle surface
             // can be opened in Blender, MeshLab and common 3D tools.
-            val obj = StringBuilder("# VRoom depth reconstruction\n")
+            val obj = StringBuilder("# VRoom depth reconstruction with coarse surface classes\n")
+            obj.append("mtllib vroom_room_mesh.mtl\n")
+            var floorFaces = 0
+            var wallFaces = 0
+            var otherFaces = 0
             snapshot.third.forEach { triangle ->
                 obj.append("v ${triangle[0]} ${triangle[1]} ${triangle[2]}\n")
                 obj.append("v ${triangle[3]} ${triangle[4]} ${triangle[5]}\n")
                 obj.append("v ${triangle[6]} ${triangle[7]} ${triangle[8]}\n")
             }
-            for (face in 0 until snapshot.third.size) {
+            var activeMaterial = ""
+            for (face in snapshot.third.indices) {
+                val t = snapshot.third[face]
+                val abx = t[3] - t[0]; val aby = t[4] - t[1]; val abz = t[5] - t[2]
+                val acx = t[6] - t[0]; val acy = t[7] - t[1]; val acz = t[8] - t[2]
+                val nx = aby * acz - abz * acy
+                val ny = abz * acx - abx * acz
+                val nz = abx * acy - aby * acx
+                val length = kotlin.math.sqrt(nx * nx + ny * ny + nz * nz).coerceAtLeast(1e-6f)
+                val verticality = kotlin.math.abs(ny / length)
+                val material = when {
+                    verticality > 0.82f -> "horizontal"
+                    verticality < 0.25f -> "vertical"
+                    else -> "other"
+                }
+                if (material != activeMaterial) {
+                    obj.append("usemtl $material\n")
+                    activeMaterial = material
+                }
+                when (material) {
+                    "horizontal" -> floorFaces++
+                    "vertical" -> wallFaces++
+                    else -> otherFaces++
+                }
                 val base = face * 3 + 1
                 obj.append("f $base ${base + 1} ${base + 2}\n")
             }
@@ -748,7 +775,25 @@ class SpatialScanActivity : Activity(), GLSurfaceView.Renderer {
                 contentResolver.openOutputStream(uri)?.use { it.write(obj.toString().toByteArray(Charsets.UTF_8)) }
                     ?: throw IllegalStateException("Could not write OBJ file")
             }
-            stats.text = "Скан сохранён: JSON + OBJ · точек: ${snapshot.first.size} · треугольников: ${snapshot.third.size}"
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+                val mtl = """
+                    newmtl horizontal
+                    Kd 0.15 0.95 0.55
+                    newmtl vertical
+                    Kd 0.15 0.75 1.00
+                    newmtl other
+                    Kd 0.85 0.85 0.90
+                """.trimIndent()
+                val mtlValues = ContentValues().apply {
+                    put(MediaStore.MediaColumns.DISPLAY_NAME, "vroom_room_mesh.mtl")
+                    put(MediaStore.MediaColumns.MIME_TYPE, "text/plain")
+                    put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/VRoom")
+                }
+                val mtlUri = contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, mtlValues)
+                    ?: throw IllegalStateException("Could not create MTL file")
+                contentResolver.openOutputStream(mtlUri)?.use { it.write(mtl.toByteArray(Charsets.UTF_8)) }
+            }
+            stats.text = "Скан сохранён: JSON + OBJ · точек: ${snapshot.first.size} · треугольников: ${snapshot.third.size} · горизонтальных: $floorFaces · вертикальных: $wallFaces · прочих: $otherFaces"
         } catch (error: Exception) {
             stats.text = getString(R.string.room_scan_error, error.message ?: "")
         }
