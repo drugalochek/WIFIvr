@@ -12,5 +12,5 @@ dependencyResolutionManagement {
         mavenCentral()
     }
 }
-rootProject.name = "WiFiVR"
+rootProject.name = "VRoom"
 include(":app")
