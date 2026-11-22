@@ -14,6 +14,8 @@ import android.os.Environment
 import android.content.ContentValues
 import android.provider.MediaStore
 import android.view.Gravity
+import android.view.Surface
+import android.content.pm.ActivityInfo
 import android.widget.Button
 import android.widget.FrameLayout
 import android.widget.LinearLayout
@@ -73,6 +75,8 @@ class SpatialScanActivity : Activity(), GLSurfaceView.Renderer {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // Keep AR scanning in the same upright portrait orientation as the normal camera view.
+        requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
         window.statusBarColor = Color.rgb(8, 13, 25)
         window.navigationBarColor = Color.rgb(8, 13, 25)
         buildUi()
@@ -266,7 +270,8 @@ class SpatialScanActivity : Activity(), GLSurfaceView.Renderer {
         val activeSession = session ?: return
         try {
             if (surfaceWidth > 0 && surfaceHeight > 0) {
-                activeSession.setDisplayGeometry(windowManager.defaultDisplay.rotation, surfaceWidth, surfaceHeight)
+                val displayRotation = glView.display?.rotation ?: Surface.ROTATION_0
+                activeSession.setDisplayGeometry(displayRotation, surfaceWidth, surfaceHeight)
             }
             val frame = activeSession.update()
             lastTrackingState = frame.camera.trackingState
