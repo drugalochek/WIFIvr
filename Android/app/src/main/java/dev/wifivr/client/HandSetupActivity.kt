@@ -270,8 +270,8 @@ private class HandOverlayView(context: android.content.Context) : View(context) 
         color = Color.WHITE
         style = Paint.Style.FILL
     }
-    @Volatile private var hands: List<List<Pair<Float, Float>>> = emptyList()
-    @Volatile private var arms: List<Pair<Float, Float>> = emptyList()
+    @Volatile private var handPoints: List<List<Pair<Float, Float>>> = emptyList()
+    @Volatile private var armPoints: List<Pair<Float, Float>> = emptyList()
     @Volatile private var frameWidth = 0
     @Volatile private var frameHeight = 0
 
@@ -281,12 +281,12 @@ private class HandOverlayView(context: android.content.Context) : View(context) 
     }
 
     fun setHands(value: List<List<Pair<Float, Float>>>) {
-        hands = value
+        handPoints = value
         postInvalidate()
     }
 
     fun setArms(value: List<Pair<Float, Float>>) {
-        arms = value
+        armPoints = value
         postInvalidate()
     }
 
@@ -313,15 +313,15 @@ private class HandOverlayView(context: android.content.Context) : View(context) 
         linePaint.color = Color.rgb(255, 190, 92)
         linePaint.strokeWidth = 9f
         armLinks.forEach { (a, b) ->
-            if (a < arms.size && b < arms.size) {
-                canvas.drawLine(px(arms[a]), py(arms[a]), px(arms[b]), py(arms[b]), linePaint)
+            if (a < armPoints.size && b < armPoints.size) {
+                canvas.drawLine(px(armPoints[a]), py(armPoints[a]), px(armPoints[b]), py(armPoints[b]), linePaint)
             }
         }
-        arms.forEach { canvas.drawCircle(px(it), py(it), 10f, pointPaint) }
+        armPoints.forEach { canvas.drawCircle(px(it), py(it), 10f, pointPaint) }
         linePaint.color = Color.rgb(73, 226, 178)
         linePaint.strokeWidth = 6f
 
-        hands.forEach { hand ->
+        handPoints.forEach { hand ->
             val fw = frameWidth.toFloat().coerceAtLeast(1f)
             val fh = frameHeight.toFloat().coerceAtLeast(1f)
             val scale = minOf(width / fw, height / fh)
