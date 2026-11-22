@@ -45,6 +45,10 @@ class SpatialScanActivity : Activity(), GLSurfaceView.Renderer {
     private lateinit var saveButton: Button
     private val points = LinkedHashMap<String, FloatArray>()
     private val planes = LinkedHashMap<String, JSONObject>()
+    private val meshTriangles = LinkedHashMap<String, FloatArray>()
+    @Volatile private var renderMeshVertices = FloatArray(0)
+    private val maxScanPoints = 120000
+    private val maxMeshTriangles = 24000
     private var lastStatsMs = 0L
     @Volatile private var depthSupported = false
     @Volatile private var depthFrames = 0L
@@ -306,10 +310,11 @@ class SpatialScanActivity : Activity(), GLSurfaceView.Renderer {
             transformedUv.position(0)
             frame.transformDisplayUvCoords(rawUv, transformedUv)
             transformedUv.position(0)
+            collectFrame(frame)
             drawCamera(transformedUv)
             drawDepthPointCloud(frame)
+            drawDepthMesh(frame)
             drawDetectedPlaneGrid(activeSession, frame)
-            collectFrame(frame)
             val now = System.currentTimeMillis()
             if (now - lastStatsMs > 500L) {
                 lastStatsMs = now
@@ -482,6 +487,33 @@ class SpatialScanActivity : Activity(), GLSurfaceView.Renderer {
         GLES20.glDisable(GLES20.GL_BLEND)
     }
 
+    /**
+     * Draws accumulated depth triangles in ARCore world coordinates. This is a real
+     * triangle surface reconstruction, not just a decorative point cloud.
+     */
+    private fun drawDepthMesh(frame: Frame) {
+        val mesh = renderMeshVertices
+        if (mesh.isEmpty() || gridProgram == 0) return
+        val view = FloatArray(16)
+        val projection = FloatArray(16)
+        val viewProjection = FloatArray(16)
+        frame.camera.getViewMatrix(view, 0)
+        frame.camera.getProjectionMatrix(projection, 0, 0.1f, 30f)
+        Matrix.multiplyMM(viewProjection, 0, projection, 0, view, 0)
+
+        GLES20.glUseProgram(gridProgram)
+        GLES20.glUniformMatrix4fv(gridMvpHandle, 1, false, viewProjection, 0)
+        GLES20.glUniform4fv(gridColorHandle, 1, floatArrayOf(0.10f, 0.88f, 1f, 0.34f), 0)
+        GLES20.glEnableVertexAttribArray(gridPositionHandle)
+        val buffer = floatBuffer(mesh)
+        GLES20.glVertexAttribPointer(gridPositionHandle, 3, GLES20.GL_FLOAT, false, 0, buffer)
+        GLES20.glEnable(GLES20.GL_BLEND)
+        GLES20.glBlendFunc(GLES20.GL_SRC_ALPHA, GLES20.GL_ONE_MINUS_SRC_ALPHA)
+        GLES20.glDrawArrays(GLES20.GL_TRIANGLES, 0, mesh.size / 3)
+        GLES20.glDisableVertexAttribArray(gridPositionHandle)
+        GLES20.glDisable(GLES20.GL_BLEND)
+    }
+
     private fun collectFrame(frame: Frame) {
         synchronized(this) {
             frame.getUpdatedTrackables(Plane::class.java).forEach { plane ->
@@ -524,7 +556,6 @@ class SpatialScanActivity : Activity(), GLSurfaceView.Renderer {
         val depthImage = try {
             frame.acquireDepthImage16Bits()
         } catch (_: Exception) {
-            // Depth may not be ready on every frame; keep the ARCore feature-point fallback.
             return
         }
         try {
@@ -532,8 +563,8 @@ class SpatialScanActivity : Activity(), GLSurfaceView.Renderer {
             val width = depthImage.width
             val height = depthImage.height
             if (width <= 0 || height <= 0) return
-            val plane = depthImage.planes[0]
-            val buffer = plane.buffer
+            val imagePlane = depthImage.planes[0]
+            val buffer = imagePlane.buffer
             val intrinsics = frame.camera.imageIntrinsics
             val cameraSize = intrinsics.imageDimensions
             val scaleX = width.toFloat() / cameraSize[0].coerceAtLeast(1)
@@ -545,38 +576,103 @@ class SpatialScanActivity : Activity(), GLSurfaceView.Renderer {
             if (fx <= 0f || fy <= 0f) return
 
             val cameraPose = frame.camera.pose
-            // 8-pixel sampling gives a substantially denser metric cloud than ARCore feature points
-            // while keeping CPU use and saved scan size bounded on mobile devices.
-            val stride = 6
+
+            // Persistent, spatially deduplicated metric points.
+            val pointStride = 6
             synchronized(this) {
-                var y = stride / 2
-                while (y < height && points.size < 15000) {
-                    var x = stride / 2
-                    while (x < width && points.size < 15000) {
-                        val offset = y * plane.rowStride + x * plane.pixelStride
+                var y = pointStride / 2
+                while (y < height && points.size < maxScanPoints) {
+                    var x = pointStride / 2
+                    while (x < width && points.size < maxScanPoints) {
+                        val offset = y * imagePlane.rowStride + x * imagePlane.pixelStride
                         if (offset + 1 < buffer.limit()) {
                             val packed = buffer.getShort(offset).toInt() and 0xFFFF
                             val depthMm = packed and 0x1FFF
                             val confidence = packed ushr 13
                             if (depthMm > 0 && confidence >= 1) {
                                 val depth = depthMm / 1000f
-                                val cameraPoint = floatArrayOf(
-                                    (x - cx) * depth / fx,
-                                    -(y - cy) * depth / fy,
-                                    -depth
-                                )
+                                val cameraPoint = floatArrayOf((x - cx) * depth / fx, -(y - cy) * depth / fy, -depth)
                                 val world = cameraPose.transformPoint(cameraPoint)
                                 val key = "${(world[0] * 20).toInt()}_${(world[1] * 20).toInt()}_${(world[2] * 20).toInt()}"
                                 if (!points.containsKey(key)) points[key] = world
                             }
                         }
-                        x += stride
+                        x += pointStride
                     }
-                    y += stride
+                    y += pointStride
                 }
+
+                // Build a coarse triangle mesh from neighbouring depth samples. A cell is
+                // accepted only when all four corners have valid depth and the depth jump
+                // is small, preventing triangles from bridging object boundaries/empty space.
+                val stride = 8
+                val cols = (width + stride - 1) / stride
+                val rows = (height + stride - 1) / stride
+                val depthGrid = FloatArray(cols * rows)
+                val worldGrid = arrayOfNulls<FloatArray>(cols * rows)
+                for (gy in 0 until rows) {
+                    val py = (gy * stride + stride / 2).coerceAtMost(height - 1)
+                    for (gx in 0 until cols) {
+                        val px = (gx * stride + stride / 2).coerceAtMost(width - 1)
+                        val offset = py * imagePlane.rowStride + px * imagePlane.pixelStride
+                        if (offset + 1 >= buffer.limit()) continue
+                        val packed = buffer.getShort(offset).toInt() and 0xFFFF
+                        val depthMm = packed and 0x1FFF
+                        val confidence = packed ushr 13
+                        if (depthMm == 0 || confidence < 1) continue
+                        val depth = depthMm / 1000f
+                        depthGrid[gy * cols + gx] = depth
+                        worldGrid[gy * cols + gx] = cameraPose.transformPoint(
+                            floatArrayOf((px - cx) * depth / fx, -(py - cy) * depth / fy, -depth)
+                        )
+                    }
+                }
+
+                fun addTriangle(a: FloatArray, b: FloatArray, d: FloatArray) {
+                    val qa = "${(a[0] * 20).toInt()},${(a[1] * 20).toInt()},${(a[2] * 20).toInt()}"
+                    val qb = "${(b[0] * 20).toInt()},${(b[1] * 20).toInt()},${(b[2] * 20).toInt()}"
+                    val qd = "${(d[0] * 20).toInt()},${(d[1] * 20).toInt()},${(d[2] * 20).toInt()}"
+                    val key = listOf(qa, qb, qd).sorted().joinToString("|")
+                    if (!meshTriangles.containsKey(key) && meshTriangles.size < maxMeshTriangles) {
+                        meshTriangles[key] = floatArrayOf(
+                            a[0], a[1], a[2], b[0], b[1], b[2], d[0], d[1], d[2]
+                        )
+                    }
+                }
+
+                for (gy in 0 until rows - 1) {
+                    for (gx in 0 until cols - 1) {
+                        val i00 = gy * cols + gx
+                        val i10 = i00 + 1
+                        val i01 = i00 + cols
+                        val i11 = i01 + 1
+                        val p00 = worldGrid[i00] ?: continue
+                        val p10 = worldGrid[i10] ?: continue
+                        val p01 = worldGrid[i01] ?: continue
+                        val p11 = worldGrid[i11] ?: continue
+                        val d00 = depthGrid[i00]
+                        val d10 = depthGrid[i10]
+                        val d01 = depthGrid[i01]
+                        val d11 = depthGrid[i11]
+                        val minDepth = minOf(d00, d10, d01, d11)
+                        val maxDepth = maxOf(d00, d10, d01, d11)
+                        if (minDepth <= 0f || maxDepth - minDepth > maxOf(0.07f, minDepth * 0.035f)) continue
+                        addTriangle(p00, p01, p10)
+                        addTriangle(p10, p01, p11)
+                    }
+                }
+
+                // Publish a bounded render snapshot. Avoid copying all points every frame.
+                val renderFloats = FloatArray(meshTriangles.size * 9)
+                var cursor = 0
+                meshTriangles.values.forEach { triangle ->
+                    triangle.copyInto(renderFloats, cursor)
+                    cursor += triangle.size
+                }
+                renderMeshVertices = renderFloats
             }
         } catch (_: Exception) {
-            // A transient depth-buffer or intrinsics issue must not stop the live scan.
+            // A transient depth-buffer issue must not stop the live scan.
         } finally {
             depthImage.close()
         }
@@ -589,6 +685,16 @@ class SpatialScanActivity : Activity(), GLSurfaceView.Renderer {
             }
             val pointArray = JSONArray()
             snapshot.first.forEach { pointArray.put(JSONArray(listOf(it[0], it[1], it[2]))) }
+            val meshArray = JSONArray()
+            synchronized(this) {
+                meshTriangles.values.forEach { triangle ->
+                    meshArray.put(JSONArray(listOf(
+                        JSONArray(listOf(triangle[0], triangle[1], triangle[2])),
+                        JSONArray(listOf(triangle[3], triangle[4], triangle[5])),
+                        JSONArray(listOf(triangle[6], triangle[7], triangle[8]))
+                    )))
+                }
+            }
             val planeArray = JSONArray()
             snapshot.second.forEach { planeArray.put(it) }
             val result = JSONObject()
@@ -597,6 +703,7 @@ class SpatialScanActivity : Activity(), GLSurfaceView.Renderer {
                 .put("tracking", "ARCore world coordinates")
                 .put("planes", planeArray)
                 .put("pointCloud", pointArray)
+                .put("meshTriangles", meshArray)
             val savedLocation = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
                 val values = ContentValues().apply {
                     put(MediaStore.MediaColumns.DISPLAY_NAME, "vroom_room_scan.json")
