@@ -1,5 +1,5 @@
 <resources>
-    <string name="app_name">Veyra</string>
+    <string name="app_name">VRoom</string>
     <string name="tagline">Беспроводная VR. Без кабелей. Свобода движения.</string>
     <string name="connection_title">Подключение к ПК</string>
     <string name="connection_hint">Убедись, что телефон и компьютер подключены к одной сети Wi-Fi.</string>
