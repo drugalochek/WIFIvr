@@ -78,6 +78,8 @@ class VrSessionActivity : ComponentActivity(), SensorEventListener {
     private val smoothedWorldHands = mutableMapOf<String, MutableList<FloatArray>>()
     private val smoothingAlpha = 0.42f
     private var lastFrameTimestamp = 0L
+    @Volatile private var analysisWidth = 640
+    @Volatile private var analysisHeight = 360
     private var lastCameraSendMs = 0L
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -148,6 +150,8 @@ class VrSessionActivity : ComponentActivity(), SensorEventListener {
                             postRotate(image.imageInfo.rotationDegrees.toFloat())
                         }
                         val upright = Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
+                        analysisWidth = upright.width
+                        analysisHeight = upright.height
                         sendCameraFrame(upright)
                         val mpImage = BitmapImageBuilder(upright).build()
                         val timestamp = maxOf(SystemClock.uptimeMillis(), lastFrameTimestamp + 1)
@@ -287,10 +291,30 @@ class VrSessionActivity : ComponentActivity(), SensorEventListener {
                     (1..4).all { isFingerExtended(filtered, it * 4) } -> "open_palm"
                     else -> "unknown"
                 }
+                // Monocular root estimate: infer wrist depth from the apparent palm width.
+                // 85 mm is a nominal palm breadth; this is only a startup estimate until the
+                // user calibrates hand scale and the phone-camera-to-HMD transform.
+                val frameWidth = analysisWidth.toFloat().coerceAtLeast(1f)
+                val frameHeight = analysisHeight.toFloat().coerceAtLeast(1f)
+                val palmDx = (filtered[5][0] - filtered[17][0]) * frameWidth
+                val palmDy = (filtered[5][1] - filtered[17][1]) * frameHeight
+                val palmPixels = sqrt(palmDx * palmDx + palmDy * palmDy).coerceAtLeast(1f)
+                val focalPixels = frameWidth * 0.92f
+                val depthMeters = (focalPixels * 0.085f / palmPixels).coerceIn(0.18f, 1.50f)
+                val wristX = filtered[0][0] * frameWidth
+                val wristY = filtered[0][1] * frameHeight
+                val cameraX = (wristX - frameWidth * 0.5f) * depthMeters / focalPixels
+                val cameraY = (wristY - frameHeight * 0.5f) * depthMeters / focalPixels
+                val rootPosition = JSONObject()
+                    .put("x", cameraX.toDouble())
+                    .put("y", (-cameraY + 0.02f).toDouble())
+                    .put("z", (-depthMeters - 0.08f).toDouble())
+
                 hands.put(JSONObject().put("handedness", side)
                     .put("confidence", (category?.score() ?: 0f).coerceIn(0f, 1f).toDouble())
                     .put("gesture", gesture).put("pinch", pinch.toDouble())
-                    .put("landmarks", imagePoints).put("worldLandmarks", worldPoints))
+                    .put("landmarks", imagePoints).put("worldLandmarks", worldPoints)
+                    .put("rootPosition", rootPosition))
             }
             smoothedHands.keys.retainAll(seen)
             smoothedWorldHands.keys.retainAll(seen)
