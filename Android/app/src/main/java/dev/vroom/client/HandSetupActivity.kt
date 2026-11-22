@@ -201,6 +201,7 @@ class HandSetupActivity : ComponentActivity() {
         val root = FrameLayout(this).apply { setBackgroundColor(Color.rgb(11, 16, 32)) }
         previewView = PreviewView(this).apply { scaleType = PreviewView.ScaleType.FIT_CENTER }
         overlay = HandOverlayView(this)
+        overlay.setFovDegrees(viewFovDegrees)
         val infoPanel = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(18), dp(14), dp(18), dp(14))
@@ -217,7 +218,7 @@ class HandSetupActivity : ComponentActivity() {
             text = getString(R.string.camera_starting); textSize = 13f
             setTextColor(Color.rgb(184, 204, 226)); setPadding(0, dp(5), 0, 0)
         }
-        val fovLabel = TextView(this).apply { text = "FOV: 90°"; textSize = 13f; setTextColor(Color.WHITE); setPadding(0, dp(10), 0, dp(2)) }
+        val fovLabel = TextView(this).apply { text = "FOV: ${viewFovDegrees}°"; textSize = 13f; setTextColor(Color.WHITE); setPadding(0, dp(10), 0, dp(2)) }
         val fovSlider = SeekBar(this).apply {
             max = 50
             progress = viewFovDegrees - 60
