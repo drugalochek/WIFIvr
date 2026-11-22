@@ -7,7 +7,7 @@
     <string name="connect">Connect</string>
     <string name="disconnect">Disconnect</string>
     <string name="no_rotation_sensor">This phone has no rotation-vector sensor.</string>
-    <string name="ready_to_connect">Ready. Enter your PC's local IP address.</string>
+    <string name="ready_to_connect">Ready. Enter the local IP address of your PC.</string>
     <string name="invalid_pc_address">Enter a valid PC address.</string>
     <string name="socket_error">Could not open network socket: %1$s</string>
     <string name="streaming_to">Sending head tracking data to %1$s:9000</string>
@@ -18,7 +18,7 @@
     <string name="camera_starting">Starting camera…</string>
     <string name="camera_permission_needed">Camera access is needed to track your hands.</string>
     <string name="hands_not_found">No hands detected. Show your hands to the rear camera.</string>
-    <string name="wrist_coordinates">Wrist position: x %.2f · y %.2f · z %.2f</string>
+    <string name="wrist_coordinates" formatted="false">Wrist position: x %.2f · y %.2f · z %.2f</string>
     <string name="coordinates_unavailable">Coordinates unavailable</string>
     <string name="hands_found">Hands detected: %1$d\n%2$s</string>
     <string name="hand_tracking_error">Hand tracking error: %1$s</string>
