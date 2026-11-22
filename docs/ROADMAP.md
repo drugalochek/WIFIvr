@@ -13,9 +13,11 @@
 - [x] Add Windows PC webcam preview mode
 - [x] Add persisted desktop settings profile for overlay and locomotion
 - [x] Add automatic reconnect for the Android camera uplink
-- [x] Add MediaPipe full-body pose estimation on Android camera and publish 33 body landmarks
-- [x] Render hand and body skeletons over the phone-camera preview in Windows Desktop
-- [ ] Add full-body pose estimation from the separate PC webcam and publish joint telemetry
+- [x] Keep MediaPipe hand tracking on the phone camera and publish 21 landmarks per hand
+- [x] Move full-body pose inference off the phone camera
+- [x] Add MoveNet Lightning (ONNX Runtime) full-body pose estimation from the separate PC webcam
+- [x] Render the 17 detected PC-webcam body keypoints over the PC webcam preview
+- [ ] Publish calibrated PC-webcam body joints to the VR runtime for locomotion and body tracking
 - [ ] Measure packet rate, loss, and end-to-end latency on real hardware
 
 ## Milestone 1 — VR runtime
