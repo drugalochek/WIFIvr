@@ -40,6 +40,12 @@ import com.google.mediapipe.tasks.vision.core.RunningMode
 import com.google.mediapipe.tasks.vision.handlandmarker.HandLandmarker
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
+import java.net.DatagramPacket
+import java.net.DatagramSocket
+import java.net.InetAddress
+import java.util.concurrent.atomic.AtomicLong
+import org.json.JSONArray
+import org.json.JSONObject
 
 class HandSetupActivity : ComponentActivity() {
     private lateinit var previewView: PreviewView
@@ -56,6 +62,9 @@ class HandSetupActivity : ComponentActivity() {
     private var headsetMode = false
     private var boundPreview: Preview? = null
     private var boundAnalysis: ImageAnalysis? = null
+    @Volatile private var handDestination: InetAddress? = null
+    @Volatile private var handSocket: DatagramSocket? = null
+    private val handSequence = AtomicLong(0)
 
     private val permissionRequest =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
@@ -67,6 +76,17 @@ class HandSetupActivity : ComponentActivity() {
         window.statusBarColor = Color.rgb(11, 16, 32)
         window.navigationBarColor = Color.rgb(11, 16, 32)
         cameraExecutor = Executors.newSingleThreadExecutor()
+        val pcAddress = intent.getStringExtra("pc_address")?.trim().orEmpty()
+        if (pcAddress.isNotEmpty()) {
+            cameraExecutor.execute {
+                try {
+                    handDestination = InetAddress.getByName(pcAddress)
+                    handSocket = DatagramSocket()
+                } catch (error: Exception) {
+                    runOnUiThread { status.text = getString(R.string.socket_error, error.message ?: "") }
+                }
+            }
+        }
         buildScreen()
         try {
             val options = HandLandmarker.HandLandmarkerOptions.builder()
@@ -79,6 +99,7 @@ class HandSetupActivity : ComponentActivity() {
                 .setMinTrackingConfidence(0.35f)
                 .setResultListener { result, _ ->
                     val hands = result.landmarks().map { hand -> hand.map { it.x() to it.y() } }
+                    sendHandPose(result)
                     val wrist = result.landmarks().firstOrNull()?.firstOrNull()
                     val nowMs = SystemClock.uptimeMillis()
                     if (fpsWindowStartMs == 0L) fpsWindowStartMs = nowMs
@@ -235,6 +256,44 @@ class HandSetupActivity : ComponentActivity() {
         }, ContextCompat.getMainExecutor(this))
     }
 
+    private fun sendHandPose(result: com.google.mediapipe.tasks.vision.handlandmarker.HandLandmarkerResult) {
+        val target = handDestination ?: return
+        val socket = handSocket ?: return
+        try {
+            val handsJson = JSONArray()
+            result.landmarks().forEachIndexed { index, landmarks ->
+                val handedness = result.handedness().getOrNull(index)?.firstOrNull()?.categoryName()
+                    ?: return@forEachIndexed
+                if (handedness != "Left" && handedness != "Right") return@forEachIndexed
+
+                val points = JSONArray()
+                landmarks.forEach { point ->
+                    points.put(JSONObject()
+                        .put("x", point.x().toDouble())
+                        .put("y", point.y().toDouble())
+                        .put("z", point.z().toDouble()))
+                }
+                if (points.length() == 21) {
+                    handsJson.put(JSONObject()
+                        .put("handedness", handedness)
+                        .put("landmarks", points))
+                }
+            }
+
+            val payload = JSONObject()
+                .put("type", "hand_pose")
+                .put("version", 1)
+                .put("timestampNs", System.nanoTime())
+                .put("sequence", handSequence.getAndIncrement())
+                .put("hands", handsJson)
+                .toString()
+                .toByteArray(Charsets.UTF_8)
+            socket.send(DatagramPacket(payload, payload.size, target, 9000))
+        } catch (_: Exception) {
+            // A dropped tracking datagram is preferable to blocking camera inference.
+        }
+    }
+
     private fun analyzeFrame(image: androidx.camera.core.ImageProxy) {
         try {
             val bitmap = image.toBitmap()
@@ -257,6 +316,8 @@ class HandSetupActivity : ComponentActivity() {
 
     override fun onDestroy() {
         handLandmarker?.close()
+        handSocket?.close()
+        handSocket = null
         cameraExecutor.shutdown()
         super.onDestroy()
     }
