@@ -121,7 +121,8 @@ class SpatialScanActivity : Activity(), GLSurfaceView.Renderer {
             if (installStatus == ArCoreApk.InstallStatus.INSTALL_REQUESTED) {
                 waitingForArInstall = true
                 return
-            }\n            waitingForArInstall = false
+            }
+            waitingForArInstall = false
             if (!ArCoreApk.getInstance().checkAvailability(this).isSupported) {
                 stats.text = getString(R.string.ar_unsupported)
                 return
