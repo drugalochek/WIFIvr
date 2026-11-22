@@ -526,6 +526,18 @@ vr::EVRInitError VRoomHmd::Activate(uint32_t objectId) {
     properties->SetFloatProperty(container, vr::Prop_SecondsFromVsyncToPhotons_Float, 0.011f);
     properties->SetBoolProperty(container, vr::Prop_ReportsTimeSinceVSync_Bool, false);
     properties->SetBoolProperty(container, vr::Prop_IsOnDesktop_Bool, false);
+
+    // Publish the standing/seated coordinate systems directly from the HMD.
+    // SteamVR requires a driver-owned Chaperone setup for custom tracking drivers.
+    const std::string chaperoneJson = BuildChaperoneJson();
+    properties->SetStringProperty(
+        container, vr::Prop_DriverProvidedChaperoneJson_String, chaperoneJson.c_str());
+    properties->SetUint64Property(
+        container, vr::Prop_CurrentUniverseId_Uint64, kVRoomUniverseId);
+    properties->SetInt32Property(
+        container, vr::Prop_Driver_RecenterSupport_Int32,
+        vr::k_EVRDriverRecenterSupport_SteamVRHandlesRecenter);
+    vr::VRDriverLog()->Log("VRoom: standing universe and chaperone data published");
     vr::VRDriverLog()->Log("VRoom: HMD activated");
     return vr::VRInitError_None;
 }
