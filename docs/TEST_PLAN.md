@@ -20,7 +20,7 @@ This checklist records observable results. Do not mark a stage complete from a s
 ## 3. SteamVR head tracking
 - [ ] Register the VRoom driver with SteamVR.
 - [ ] Confirm SteamVR detects VRoom_HMD_001 as the active HMD.
-- [ ] Confirm the phone quaternion reaches the Windows host and driver.
+- [ ] Start the unified Android **VR-сеанс** and confirm the phone quaternion reaches the Windows host and driver while camera tracking remains active.
 - [ ] Rotate the phone slowly on each axis and verify the virtual head orientation follows without axis inversion.
 - [ ] Check neutral orientation and drift over several minutes.
 - [ ] Repeat SteamVR startup and Room Setup; record any chaperone or universe errors.
@@ -38,9 +38,11 @@ This checklist records observable results. Do not mark a stage complete from a s
 The driver currently registers controller-class hand endpoints only to expose OpenVR skeletal-input components. It does not provide valid tracked-device poses or trigger/grip button emulation. Do not treat hand-centred MediaPipe landmarks as room-space tracking.
 - [ ] Verify left/right skeletal input components appear in SteamVR.
 - [ ] Confirm both 31-bone motion ranges update and the hand mesh follows each finger.
+- [ ] Confirm the hand device poses follow wrist movement relative to the HMD. The current root uses a nominal 85 mm palm width and assumed camera focal scale; record actual position error before treating it as calibrated.
 - [ ] Confirm missing hands and UDP loss clear the previous skeletal pose within 300 ms.
 - [ ] Verify left/right bone mapping and axis orientation in a dedicated skeletal-input test scene.
-- [ ] Validate camera-to-HMD calibration and wrist/root placement in the VR room.
+- [ ] Measure the user's palm breadth and calibrate camera intrinsics/focal scale.
+- [ ] Calibrate camera-to-HMD offset/orientation and wrist/root placement in the VR room.
 - [ ] Validate tracking volume and calibration repeatability.
 - [ ] Test locomotion in a controlled scene with an immediate disable path.
 - [ ] Verify overlay anchoring and desktop interaction in headset.
