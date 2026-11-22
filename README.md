@@ -1,4 +1,6 @@
-# WiFi VR
+# Veyra
+
+**Veyra** — короткое имя проекта: ассоциация с виртуальным пространством и движением. Репозиторий пока сохраняет техническое имя `WIFIvr`.
 
 Android phone as a wireless VR headset, Windows PC as the host.
 
