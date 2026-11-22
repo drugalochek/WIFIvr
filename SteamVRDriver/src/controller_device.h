@@ -38,8 +38,8 @@ public:
         }
 
         vr::VRDriverLog()->Log(isLeft
-            ? "VRoom: left skeletal hand registered; no trigger/grip emulation; room-space pose awaits camera calibration"
-            : "VRoom: right skeletal hand registered; no trigger/grip emulation; room-space pose awaits camera calibration");
+            ? "VRoom: left skeletal hand registered; no trigger/grip emulation; approximate HMD-relative root; camera calibration still required"
+            : "VRoom: right skeletal hand registered; no trigger/grip emulation; approximate HMD-relative root; camera calibration still required");
         return vr::VRInitError_None;
     }
 
