@@ -39,6 +39,7 @@ import com.google.mediapipe.framework.image.BitmapImageBuilder
 import com.google.mediapipe.tasks.core.BaseOptions
 import com.google.mediapipe.tasks.vision.core.RunningMode
 import com.google.mediapipe.tasks.vision.handlandmarker.HandLandmarker
+import com.google.mediapipe.tasks.vision.poselandmarker.PoseLandmarker
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.net.DatagramPacket
@@ -60,6 +61,8 @@ class HandSetupActivity : ComponentActivity() {
     private var useFrontCamera = false
     private lateinit var cameraExecutor: ExecutorService
     private var handLandmarker: HandLandmarker? = null
+    private var poseLandmarker: PoseLandmarker? = null
+    private var lastPoseTimestamp = 0L
     private var lastFrameTimestamp = 0L
     private var lastUiUpdateMs = 0L
     private var framesInWindow = 0
@@ -162,6 +165,23 @@ class HandSetupActivity : ComponentActivity() {
                 }
                 .build()
             handLandmarker = HandLandmarker.createFromOptions(this, options)
+
+            val poseOptions = PoseLandmarker.PoseLandmarkerOptions.builder()
+                .setBaseOptions(BaseOptions.builder().setModelAssetPath("pose_landmarker_lite.task").build())
+                .setRunningMode(RunningMode.LIVE_STREAM)
+                .setNumPoses(1)
+                .setMinPoseDetectionConfidence(0.45f)
+                .setMinPosePresenceConfidence(0.45f)
+                .setMinTrackingConfidence(0.45f)
+                .setResultListener { result, _ ->
+                    val pose = result.landmarks().firstOrNull()
+                    sendBodyPose(pose)
+                }
+                .setErrorListener { error ->
+                    runOnUiThread { status.text = "Ошибка отслеживания тела: ${error.message ?: ""}" }
+                }
+                .build()
+            poseLandmarker = PoseLandmarker.createFromOptions(this, poseOptions)
         } catch (error: Exception) {
             status.text = getString(R.string.model_load_error, error.message ?: "")
             return
@@ -346,6 +366,28 @@ class HandSetupActivity : ComponentActivity() {
         }
     }
 
+    private fun sendBodyPose(landmarks: List<com.google.mediapipe.tasks.components.containers.NormalizedLandmark>?) {
+        val target = handDestination ?: return
+        val socket = handSocket ?: return
+        try {
+            val points = JSONArray()
+            landmarks?.forEach { point ->
+                points.put(JSONObject()
+                    .put("x", point.x().coerceIn(0f, 1f).toDouble())
+                    .put("y", point.y().coerceIn(0f, 1f).toDouble())
+                    .put("z", point.z().toDouble())
+                    .put("visibility", point.visibility().orElse(0f).toDouble()))
+            }
+            val payload = JSONObject()
+                .put("type", "body_pose")
+                .put("version", 1)
+                .put("timestampNs", System.nanoTime())
+                .put("landmarks", points)
+                .toString().toByteArray(Charsets.UTF_8)
+            socket.send(DatagramPacket(payload, payload.size, target, 9000))
+        } catch (_: Exception) { }
+    }
+
     private fun sendCameraFrame(bitmap: Bitmap) {
         val now = SystemClock.elapsedRealtime()
         if (now - lastCameraSendMs < 100L) return
@@ -397,6 +439,9 @@ class HandSetupActivity : ComponentActivity() {
             val timestamp = maxOf(SystemClock.uptimeMillis(), lastFrameTimestamp + 1)
             lastFrameTimestamp = timestamp
             handLandmarker?.detectAsync(mpImage, timestamp)
+            val poseTimestamp = maxOf(SystemClock.uptimeMillis(), lastPoseTimestamp + 1)
+            lastPoseTimestamp = poseTimestamp
+            poseLandmarker?.detectAsync(mpImage, poseTimestamp)
         } catch (error: Exception) {
             runOnUiThread { status.text = getString(R.string.camera_frame_error, error.message ?: "") }
         } finally { image.close() }
@@ -404,6 +449,7 @@ class HandSetupActivity : ComponentActivity() {
 
     override fun onDestroy() {
         handLandmarker?.close()
+        poseLandmarker?.close()
         handSocket?.close()
         handSocket = null
         cameraConnectionRunning = false
