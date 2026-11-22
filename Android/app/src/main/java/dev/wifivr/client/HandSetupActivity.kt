@@ -143,7 +143,7 @@ class HandSetupActivity : ComponentActivity() {
                     View.SYSTEM_UI_FLAG_FULLSCREEN or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
                 else View.SYSTEM_UI_FLAG_VISIBLE
                 text = getString(if (headsetMode) R.string.switch_to_phone_mode else R.string.switch_to_headset_mode)
-                overlay.setStereoMode(headsetMode)
+                this@HandSetupActivity.overlay.setStereoMode(headsetMode)
                 previewView.visibility = if (headsetMode) View.GONE else View.VISIBLE
                 (infoPanel.layoutParams as FrameLayout.LayoutParams).apply {
                     topMargin = if (headsetMode) dp(10) else statusBarHeight() + dp(12)
