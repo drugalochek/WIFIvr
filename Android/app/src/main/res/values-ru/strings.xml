@@ -18,7 +18,7 @@
     <string name="camera_starting">Запуск камеры…</string>
     <string name="camera_permission_needed">Для отслеживания рук нужен доступ к камере.</string>
     <string name="hands_not_found">Руки не найдены. Покажи их задней камере.</string>
-    <string name="wrist_coordinates">Положение запястья: x %.2f · y %.2f · z %.2f</string>
+    <string name="wrist_coordinates" formatted="false">Положение запястья: x %.2f · y %.2f · z %.2f</string>
     <string name="coordinates_unavailable">Координаты недоступны</string>
     <string name="hands_found">Найдено рук: %1$d\n%2$s</string>
     <string name="hand_tracking_error">Ошибка отслеживания рук: %1$s</string>
