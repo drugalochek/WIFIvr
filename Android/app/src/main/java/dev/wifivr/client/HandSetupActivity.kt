@@ -10,6 +10,9 @@ import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
 import android.os.SystemClock
 import android.view.Gravity
+import android.view.WindowManager
+import android.content.pm.ActivityInfo
+import android.util.Size
 import android.view.View
 import android.widget.Button
 import android.widget.FrameLayout
@@ -42,6 +45,10 @@ class HandSetupActivity : ComponentActivity() {
     private var handLandmarker: HandLandmarker? = null
     private var poseLandmarker: PoseLandmarker? = null
     private var lastFrameTimestamp = 0L
+    private var lastUiUpdateMs = 0L
+    private var framesInWindow = 0
+    private var fpsWindowStartMs = 0L
+    private var headsetMode = false
 
     private val permissionRequest =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
@@ -59,23 +66,35 @@ class HandSetupActivity : ComponentActivity() {
                 .setBaseOptions(BaseOptions.builder().setModelAssetPath("hand_landmarker.task").build())
                 .setRunningMode(RunningMode.LIVE_STREAM)
                 .setNumHands(2)
-                .setMinHandDetectionConfidence(0.5f)
-                .setMinHandPresenceConfidence(0.5f)
-                .setMinTrackingConfidence(0.5f)
+                .setMinHandDetectionConfidence(0.45f)
+                .setMinHandPresenceConfidence(0.45f)
+                .setMinTrackingConfidence(0.45f)
                 .setResultListener { result, _ ->
                     val hands = result.landmarks().map { hand ->
                         hand.map { landmark -> landmark.x() to landmark.y() }
                     }
                     val wrist = result.landmarks().firstOrNull()?.firstOrNull()
+                    val nowMs = SystemClock.uptimeMillis()
+                    if (fpsWindowStartMs == 0L) fpsWindowStartMs = nowMs
+                    framesInWindow++
+                    val fps = if (nowMs - fpsWindowStartMs >= 1000L) {
+                        val measured = framesInWindow * 1000f / (nowMs - fpsWindowStartMs).coerceAtLeast(1L)
+                        framesInWindow = 0
+                        fpsWindowStartMs = nowMs
+                        measured
+                    } else null
                     runOnUiThread {
                         overlay.updateHands(hands)
+                        if (nowMs - lastUiUpdateMs < 120L && fps == null) return@runOnUiThread
+                        lastUiUpdateMs = nowMs
+                        val fpsLabel = fps?.let { getString(R.string.tracking_fps, it) } ?: ""
                         status.text = if (hands.isEmpty()) {
-                            getString(R.string.hands_not_found)
+                            getString(R.string.hands_not_found) + if (fpsLabel.isNotEmpty()) "\n$fpsLabel" else ""
                         } else {
                             val coordinates = wrist?.let {
                                 getString(R.string.wrist_coordinates, it.x(), it.y(), it.z())
                             } ?: getString(R.string.coordinates_unavailable)
-                            getString(R.string.hands_found, hands.size, coordinates)
+                            getString(R.string.hands_found, hands.size, coordinates) + if (fpsLabel.isNotEmpty()) "\n$fpsLabel" else ""
                         }
                     }
                 }
@@ -89,9 +108,9 @@ class HandSetupActivity : ComponentActivity() {
                 .setBaseOptions(BaseOptions.builder().setModelAssetPath("pose_landmarker_lite.task").build())
                 .setRunningMode(RunningMode.LIVE_STREAM)
                 .setNumPoses(1)
-                .setMinPoseDetectionConfidence(0.5f)
-                .setMinPosePresenceConfidence(0.5f)
-                .setMinTrackingConfidence(0.5f)
+                .setMinPoseDetectionConfidence(0.45f)
+                .setMinPosePresenceConfidence(0.45f)
+                .setMinTrackingConfidence(0.45f)
                 .setResultListener { result, _ ->
                     val pose = result.landmarks().firstOrNull().orEmpty()
                     val armPoints = listOf(11, 13, 15, 12, 14, 16).mapNotNull { index ->
@@ -149,6 +168,17 @@ class HandSetupActivity : ComponentActivity() {
             setTextColor(Color.rgb(184, 204, 226))
             setPadding(0, dp(5), 0, 0)
         }
+        val modeButton = Button(this).apply {
+            text = getString(R.string.switch_to_headset_mode)
+            isAllCaps = false
+            setOnClickListener {
+                headsetMode = !headsetMode
+                requestedOrientation = if (headsetMode) ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE else ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+                window.decorView.systemUiVisibility = if (headsetMode) (View.SYSTEM_UI_FLAG_FULLSCREEN or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY) else 0
+                text = getString(if (headsetMode) R.string.switch_to_phone_mode else R.string.switch_to_headset_mode)
+                status.text = getString(if (headsetMode) R.string.headset_mode_note else R.string.phone_mode_note)
+            }
+        }
         cameraSwitchButton = Button(this).apply {
             text = getString(R.string.switch_to_front_camera)
             isAllCaps = false
@@ -162,6 +192,7 @@ class HandSetupActivity : ComponentActivity() {
         infoPanel.addView(heading)
         infoPanel.addView(status)
         infoPanel.addView(cameraSwitchButton)
+        infoPanel.addView(modeButton)
         root.addView(previewView, FrameLayout.LayoutParams(-1, -1))
         root.addView(overlay, FrameLayout.LayoutParams(-1, -1))
         root.addView(infoPanel, FrameLayout.LayoutParams(
@@ -182,6 +213,7 @@ class HandSetupActivity : ComponentActivity() {
                 it.setSurfaceProvider(previewView.surfaceProvider)
             }
             val analysis = ImageAnalysis.Builder()
+                .setTargetResolution(Size(1280, 720))
                 .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
                 .build()
             analysis.setAnalyzer(cameraExecutor) { image -> analyzeFrame(image) }
