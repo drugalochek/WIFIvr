@@ -23,6 +23,7 @@ import android.widget.TextView
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.ComponentActivity
 import androidx.camera.core.CameraSelector
+import androidx.camera.core.MirrorMode
 import androidx.camera.camera2.interop.Camera2CameraInfo
 import androidx.camera.camera2.interop.Camera2Interop
 import android.hardware.camera2.CameraCharacteristics
@@ -70,9 +71,10 @@ class HandSetupActivity : ComponentActivity() {
                 .setBaseOptions(BaseOptions.builder().setModelAssetPath("hand_landmarker.task").build())
                 .setRunningMode(RunningMode.LIVE_STREAM)
                 .setNumHands(2)
-                .setMinHandDetectionConfidence(0.45f)
-                .setMinHandPresenceConfidence(0.45f)
-                .setMinTrackingConfidence(0.45f)
+                // Lower thresholds help reacquire hands after fast movement or brief occlusion.
+                .setMinHandDetectionConfidence(0.35f)
+                .setMinHandPresenceConfidence(0.35f)
+                .setMinTrackingConfidence(0.35f)
                 .setResultListener { result, _ ->
                     val hands = result.landmarks().map { hand -> hand.map { it.x() to it.y() } }
                     val wrist = result.landmarks().firstOrNull()?.firstOrNull()
@@ -174,18 +176,26 @@ class HandSetupActivity : ComponentActivity() {
         val providerFuture = ProcessCameraProvider.getInstance(this)
         providerFuture.addListener({
             val provider = providerFuture.get()
-            val preview = Preview.Builder().build().also { it.setSurfaceProvider(previewView.surfaceProvider) }
+            // Keep a sharper 720p preview while MediaPipe processes a lighter 16:9 frame.
+            // Explicitly disable front-camera mirroring so the preview matches real-world coordinates.
+            val previewBuilder = Preview.Builder()
+                .setTargetResolution(Size(1280, 720))
+                .setMirrorMode(MirrorMode.MIRROR_MODE_OFF)
+            val preview = previewBuilder.build().also { it.setSurfaceProvider(previewView.surfaceProvider) }
             val selector = if (useFrontCamera) CameraSelector.DEFAULT_FRONT_CAMERA else CameraSelector.DEFAULT_BACK_CAMERA
             val analysisBuilder = ImageAnalysis.Builder()
-                .setTargetResolution(Size(640, 480))
+                .setTargetResolution(Size(640, 360))
                 .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
             // Ask the camera for a real 60 FPS AE range when the sensor advertises one.
             // Unsupported devices keep their native range rather than failing camera startup.
             try {
                 val ranges = Camera2CameraInfo.from(provider.getCameraInfo(selector))
                     .getCameraCharacteristic(CameraCharacteristics.CONTROL_AE_AVAILABLE_TARGET_FPS_RANGES)
-                val sixty = ranges?.filter { it.upper == 60 && it.lower <= 60 }?.minByOrNull { it.lower }
+                val sixty = ranges?.firstOrNull { it.lower == 60 && it.upper == 60 }
+                    ?: ranges?.filter { it.upper == 60 && it.lower <= 60 }?.minByOrNull { it.lower }
                 if (sixty != null) {
+                    Camera2Interop.Extender(previewBuilder)
+                        .setCaptureRequestOption(CaptureRequest.CONTROL_AE_TARGET_FPS_RANGE, sixty)
                     Camera2Interop.Extender(analysisBuilder)
                         .setCaptureRequestOption(CaptureRequest.CONTROL_AE_TARGET_FPS_RANGE, sixty)
                 }
