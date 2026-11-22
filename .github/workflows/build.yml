@@ -98,6 +98,7 @@ jobs:
           Copy-Item SteamVRDriver/driver.vrdrivermanifest artifacts/driver_vroom/
           Copy-Item SteamVRDriver/resources/settings/default.vrsettings artifacts/driver_vroom/resources/settings/
           Copy-Item SteamVRDriver/resources/input/vroom_controller_profile.json artifacts/driver_vroom/resources/input/
+          Copy-Item SteamVRDriver/resources/input/vroom_controller_remapping.json artifacts/driver_vroom/resources/input/
       - name: Upload SteamVR driver
         uses: actions/upload-artifact@v4
         with:
