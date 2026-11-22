@@ -23,6 +23,11 @@ import android.widget.TextView
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.ComponentActivity
 import androidx.camera.core.CameraSelector
+import androidx.camera.camera2.interop.Camera2CameraInfo
+import androidx.camera.camera2.interop.Camera2Interop
+import android.hardware.camera2.CameraCharacteristics
+import android.hardware.camera2.CaptureRequest
+import android.util.Range
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
@@ -170,10 +175,23 @@ class HandSetupActivity : ComponentActivity() {
         providerFuture.addListener({
             val provider = providerFuture.get()
             val preview = Preview.Builder().build().also { it.setSurfaceProvider(previewView.surfaceProvider) }
-            val analysis = ImageAnalysis.Builder().setTargetResolution(Size(1280, 720))
-                .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST).build()
-            analysis.setAnalyzer(cameraExecutor) { image -> analyzeFrame(image) }
             val selector = if (useFrontCamera) CameraSelector.DEFAULT_FRONT_CAMERA else CameraSelector.DEFAULT_BACK_CAMERA
+            val analysisBuilder = ImageAnalysis.Builder()
+                .setTargetResolution(Size(640, 480))
+                .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+            // Ask the camera for a real 60 FPS AE range when the sensor advertises one.
+            // Unsupported devices keep their native range rather than failing camera startup.
+            try {
+                val ranges = Camera2CameraInfo.from(provider.getCameraInfo(selector))
+                    .getCameraCharacteristic(CameraCharacteristics.CONTROL_AE_AVAILABLE_TARGET_FPS_RANGES)
+                val sixty = ranges?.filter { it.lower == 60 && it.upper == 60 }?.firstOrNull()
+                if (sixty != null) {
+                    Camera2Interop.Extender(analysisBuilder)
+                        .setCaptureRequestOption(CaptureRequest.CONTROL_AE_TARGET_FPS_RANGE, sixty)
+                }
+            } catch (_: Exception) { }
+            val analysis = analysisBuilder.build()
+            analysis.setAnalyzer(cameraExecutor) { image -> analyzeFrame(image) }
             try {
                 if (!provider.hasCamera(selector)) {
                     useFrontCamera = false
@@ -196,10 +214,9 @@ class HandSetupActivity : ComponentActivity() {
             val bitmap = image.toBitmap()
             val matrix = android.graphics.Matrix().apply { postRotate(image.imageInfo.rotationDegrees.toFloat()) }
             val rotated = android.graphics.Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
-            val modelBitmap = if (useFrontCamera) {
-                val mirror = android.graphics.Matrix().apply { postScale(-1f, 1f, rotated.width / 2f, rotated.height / 2f) }
-                android.graphics.Bitmap.createBitmap(rotated, 0, 0, rotated.width, rotated.height, mirror, true)
-            } else rotated
+            // Keep the sensor image unmirrored in both phone and headset modes.
+            // Hand landmarks are generated from this exact same bitmap, so they stay aligned.
+            val modelBitmap = rotated
             overlay.updateFrame(modelBitmap)
             val mpImage = BitmapImageBuilder(modelBitmap).build()
             val timestamp = maxOf(SystemClock.uptimeMillis(), lastFrameTimestamp + 1)
