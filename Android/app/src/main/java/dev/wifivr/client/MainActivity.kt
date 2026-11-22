@@ -51,7 +51,12 @@ class MainActivity : Activity(), SensorEventListener {
         connectButton.isEnabled = rotationSensor != null
     }
 
-    private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()\n\n    private fun statusBarHeight(): Int {\n        val id = resources.getIdentifier("status_bar_height", "dimen", "android")\n        return if (id > 0) resources.getDimensionPixelSize(id) else dp(24)\n    }
+    private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
+
+    private fun statusBarHeight(): Int {
+        val id = resources.getIdentifier("status_bar_height", "dimen", "android")
+        return if (id > 0) resources.getDimensionPixelSize(id) else dp(24)
+    }
 
     private fun rounded(color: Int, radius: Int): GradientDrawable =
         GradientDrawable().apply { setColor(color); cornerRadius = dp(radius).toFloat() }
