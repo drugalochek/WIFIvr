@@ -25,3 +25,9 @@ APK output: `app/build/outputs/apk/debug/app-debug.apk`.
 5. Allow the Windows firewall prompt for the receiver on private networks.
 
 This milestone sends orientation only. It does not yet stream PC video, render a stereo headset view, track hands, or provide an OpenXR runtime.
+
+## Hand camera check
+
+From the home screen tap **Проверка рук и камеры** and grant camera permission. Hold one or both hands in view; the overlay draws the 21 landmarks and finger connections. The CI workflow downloads the official MediaPipe hand model into the build assets before packaging the APK.
+
+The displayed x/y values are normalized image coordinates and z is relative depth from the hand landmark model. A single RGB camera does **not** provide reliable absolute room-space position or full 3D hand tracking; this screen is a visual detection/alignment check, not a calibrated VR controller yet.
