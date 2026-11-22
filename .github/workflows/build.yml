@@ -105,3 +105,12 @@ jobs:
           path: artifacts/driver_vroom/
           if-no-files-found: error
           retention-days: 14
+
+  test-protocol:
+    name: Test VRoom protocol and session contracts
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v6
+      - name: Run contract tests
+        run: python -m unittest discover -s Protocol/tests -v
