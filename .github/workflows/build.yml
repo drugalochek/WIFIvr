@@ -22,12 +22,12 @@ jobs:
         with:
           dotnet-version: 8.0.x
       - name: Restore
-        run: dotnet restore Windows/WiFiVR.Receiver/WiFiVR.Receiver.csproj
+        run: dotnet restore Windows/VRoom/VRoom.csproj
       - name: Build
-        run: dotnet build Windows/WiFiVR.Receiver/WiFiVR.Receiver.csproj --configuration Release --no-restore
+        run: dotnet build Windows/VRoom/VRoom.csproj --configuration Release --no-restore
       - name: Publish VRoom Windows app
         run: >
-          dotnet publish Windows/WiFiVR.Receiver/WiFiVR.Receiver.csproj
+          dotnet publish Windows/VRoom/VRoom.csproj
           --configuration Release
           --runtime win-x64
           --self-contained true
