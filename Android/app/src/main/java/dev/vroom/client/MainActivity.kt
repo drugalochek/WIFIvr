@@ -153,6 +153,7 @@ class MainActivity : Activity(), SensorEventListener {
             setTextColor(Color.WHITE)
             background = rounded(Color.rgb(48, 67, 99), 16)
             setOnClickListener {
+                if (running) stopStreaming()
                 startActivity(Intent(this@MainActivity, VrSessionActivity::class.java)
                     .putExtra("pc_address", addressInput.text.toString().trim()))
             }
