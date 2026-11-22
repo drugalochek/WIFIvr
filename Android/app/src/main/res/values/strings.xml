@@ -43,4 +43,5 @@
     <string name="room_profile">User profile</string>
     <string name="room_profile_hint">Name or profile, e.g. Alex</string>
     <string name="room_tracking_support">Device tracking support</string>
+    <string name="pose_tracking_error">Body tracking error: %1$s</string>
 </resources>
