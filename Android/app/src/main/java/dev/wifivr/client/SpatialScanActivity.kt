@@ -452,20 +452,18 @@ class SpatialScanActivity : Activity(), GLSurfaceView.Renderer {
      */
     private fun drawDepthPointCloud(frame: Frame) {
         if (pointProgram == 0) return
-        val snapshot = synchronized(this) {
-            points.values.map { it.copyOf() }
-        }
-        if (snapshot.isEmpty()) return
-
-        val worldPositions = FloatArray(snapshot.size * 3)
-        var offset = 0
-        snapshot.forEach { point ->
-            if (point.size >= 3) {
-                worldPositions[offset++] = point[0]
-                worldPositions[offset++] = point[1]
-                worldPositions[offset++] = point[2]
+        val worldPositions = synchronized(this) {
+            val count = minOf(points.size, 15000)
+            val packed = FloatArray(count * 3)
+            var index = 0
+            points.values.take(count).forEach { point ->
+                packed[index++] = point[0]
+                packed[index++] = point[1]
+                packed[index++] = point[2]
             }
+            packed
         }
+        val offset = worldPositions.size
         if (offset == 0) return
 
         val view = FloatArray(16)
@@ -475,7 +473,7 @@ class SpatialScanActivity : Activity(), GLSurfaceView.Renderer {
         frame.camera.getProjectionMatrix(projection, 0, 0.1f, 30f)
         Matrix.multiplyMM(viewProjection, 0, projection, 0, view, 0)
 
-        val buffer = floatBuffer(if (offset == worldPositions.size) worldPositions else worldPositions.copyOf(offset))
+        val buffer = floatBuffer(worldPositions)
         GLES20.glUseProgram(pointProgram)
         GLES20.glUniformMatrix4fv(pointMvpHandle, 1, false, viewProjection, 0)
         GLES20.glEnableVertexAttribArray(pointPositionHandle)
@@ -628,6 +626,7 @@ class SpatialScanActivity : Activity(), GLSurfaceView.Renderer {
                     }
                 }
 
+                var meshChanged = false
                 fun addTriangle(a: FloatArray, b: FloatArray, d: FloatArray) {
                     val qa = "${(a[0] * 20).toInt()},${(a[1] * 20).toInt()},${(a[2] * 20).toInt()}"
                     val qb = "${(b[0] * 20).toInt()},${(b[1] * 20).toInt()},${(b[2] * 20).toInt()}"
@@ -637,6 +636,7 @@ class SpatialScanActivity : Activity(), GLSurfaceView.Renderer {
                         meshTriangles[key] = floatArrayOf(
                             a[0], a[1], a[2], b[0], b[1], b[2], d[0], d[1], d[2]
                         )
+                        meshChanged = true
                     }
                 }
 
@@ -662,14 +662,17 @@ class SpatialScanActivity : Activity(), GLSurfaceView.Renderer {
                     }
                 }
 
-                // Publish a bounded render snapshot. Avoid copying all points every frame.
-                val renderFloats = FloatArray(meshTriangles.size * 9)
-                var cursor = 0
-                meshTriangles.values.forEach { triangle ->
-                    triangle.copyInto(renderFloats, cursor)
-                    cursor += triangle.size
+                // Rebuild the GPU snapshot only when new triangles were actually added.
+                // This prevents a large full-mesh allocation on every camera frame.
+                if (meshChanged) {
+                    val renderFloats = FloatArray(meshTriangles.size * 9)
+                    var cursor = 0
+                    meshTriangles.values.forEach { triangle ->
+                        triangle.copyInto(renderFloats, cursor)
+                        cursor += triangle.size
+                    }
+                    renderMeshVertices = renderFloats
                 }
-                renderMeshVertices = renderFloats
             }
         } catch (_: Exception) {
             // A transient depth-buffer issue must not stop the live scan.
