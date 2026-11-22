@@ -395,9 +395,13 @@ private:
 };
 
 void VRoomHmd::Present(const vr::PresentInfo_t* info, uint32_t size) {
-    if (info && size >= sizeof(vr::PresentInfo_t))
+    // The callback runs on SteamVR's presentation path. GPU readback plus JPEG
+    // encoding is synchronous, so doing it for every compositor frame can
+    // stall the virtual-display worker and make SteamVR terminate it.
+    // This is only a transport preview: cap capture to roughly 10 FPS.
+    const uint64_t frame = presentedFrames_.fetch_add(1, std::memory_order_relaxed);
+    if (info && size >= sizeof(vr::PresentInfo_t) && (frame % 7u) == 0u)
         provider_->SubmitFrame(info->backbufferTextureHandle);
-    presentedFrames_.fetch_add(1, std::memory_order_relaxed);
 }
 
 vr::EVRInitError VRoomHmd::Activate(uint32_t objectId) {
