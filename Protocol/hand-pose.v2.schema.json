@@ -26,6 +26,17 @@
               { "$ref": "#/$defs/worldLandmarks" },
               { "type": "array", "maxItems": 0 }
             ]
+          },
+          "rootPosition": {
+            "description": "Approximate HMD-local wrist position in metres, estimated from apparent palm width and nominal camera FOV. Requires physical camera-to-HMD and hand-scale calibration before precision use.",
+            "type": "object",
+            "required": ["x", "y", "z"],
+            "properties": {
+              "x": { "type": "number", "minimum": -3, "maximum": 3 },
+              "y": { "type": "number", "minimum": -3, "maximum": 3 },
+              "z": { "type": "number", "minimum": -3, "maximum": 3 }
+            },
+            "additionalProperties": false
           }
         },
         "additionalProperties": false
