@@ -7,6 +7,7 @@ import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
+import android.graphics.Rect
 import android.graphics.RectF
 import android.os.Bundle
 import android.view.View
@@ -152,7 +153,7 @@ private class StereoPreviewView(context: android.content.Context) : View(context
         val sourceHeight = target.height() / scale
         val left = (bitmap.width - sourceWidth) / 2f
         val top = (bitmap.height - sourceHeight) / 2f
-        val source = RectF(left, top, left + sourceWidth, top + sourceHeight)
+        val source = Rect(left.toInt(), top.toInt(), (left + sourceWidth).toInt(), (top + sourceHeight).toInt())
         canvas.drawBitmap(bitmap, source, target, bitmapPaint)
     }
 
