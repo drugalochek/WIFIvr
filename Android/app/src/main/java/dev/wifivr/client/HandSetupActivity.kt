@@ -13,7 +13,7 @@ import android.view.View
 import android.widget.FrameLayout
 import android.widget.TextView
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.appcompat.app.AppCompatActivity
+import androidx.activity.ComponentActivity
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.ImageProxy
@@ -28,7 +28,7 @@ import com.google.mediapipe.tasks.vision.handlandmarker.HandLandmarker
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 
-class HandSetupActivity : AppCompatActivity() {
+class HandSetupActivity : ComponentActivity() {
     private lateinit var previewView: PreviewView
     private lateinit var overlay: HandOverlayView
     private lateinit var status: TextView
@@ -92,7 +92,7 @@ class HandSetupActivity : AppCompatActivity() {
     private fun buildScreen() {
         val root = FrameLayout(this)
         previewView = PreviewView(this).apply {
-            scaleType = PreviewView.ScaleType.FILL_CENTER
+            scaleType = PreviewView.ScaleType.FIT_CENTER
         }
         overlay = HandOverlayView(this)
         status = TextView(this).apply {
@@ -145,13 +145,12 @@ class HandSetupActivity : AppCompatActivity() {
             val rotated = android.graphics.Bitmap.createBitmap(
                 bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true
             )
+            overlay.setFrameSize(rotated.width, rotated.height)
             val mpImage = BitmapImageBuilder(rotated).build()
             val now = SystemClock.uptimeMillis()
             val timestamp = maxOf(now, lastFrameTimestamp + 1)
             lastFrameTimestamp = timestamp
             handLandmarker?.detectAsync(mpImage, timestamp)
-            if (rotated !== bitmap) rotated.recycle()
-            bitmap.recycle()
         } catch (error: Exception) {
             runOnUiThread { status.text = "Ошибка кадра камеры: ${error.message}" }
         } finally {
@@ -177,6 +176,13 @@ private class HandOverlayView(context: android.content.Context) : View(context) 
         style = Paint.Style.FILL
     }
     @Volatile private var hands: List<List<Pair<Float, Float>>> = emptyList()
+    @Volatile private var frameWidth = 0
+    @Volatile private var frameHeight = 0
+
+    fun setFrameSize(w: Int, h: Int) {
+        frameWidth = w
+        frameHeight = h
+    }
 
     fun setHands(value: List<List<Pair<Float, Float>>>) {
         hands = value
@@ -194,8 +200,13 @@ private class HandOverlayView(context: android.content.Context) : View(context) 
             0 to 17
         )
         hands.forEach { hand ->
-            fun px(point: Pair<Float, Float>) = (1f - point.first) * width
-            fun py(point: Pair<Float, Float>) = point.second * height
+            val fw = frameWidth.toFloat().coerceAtLeast(1f)
+            val fh = frameHeight.toFloat().coerceAtLeast(1f)
+            val scale = minOf(width / fw, height / fh)
+            val offsetX = (width - fw * scale) / 2f
+            val offsetY = (height - fh * scale) / 2f
+            fun px(point: Pair<Float, Float>) = offsetX + (1f - point.first) * fw * scale
+            fun py(point: Pair<Float, Float>) = offsetY + point.second * fh * scale
             connections.forEach { (a, b) ->
                 if (a < hand.size && b < hand.size) {
                     canvas.drawLine(px(hand[a]), py(hand[a]), px(hand[b]), py(hand[b]), linePaint)
