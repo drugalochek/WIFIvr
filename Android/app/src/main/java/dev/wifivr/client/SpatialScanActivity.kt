@@ -47,7 +47,7 @@ class SpatialScanActivity : Activity(), GLSurfaceView.Renderer {
     private var samplerHandle = 0
     private val vertices = floatBuffer(floatArrayOf(-1f,-1f, 1f,-1f, -1f,1f, 1f,1f))
     private val rawUv = floatBuffer(floatArrayOf(0f,0f, 1f,0f, 0f,1f, 1f,1f))
-    @Volatile private var scanActive = false
+    @Volatile private var scanActive = false\n    @Volatile private var activityResumed = false
 
     private fun floatBuffer(values: FloatArray): FloatBuffer =
         ByteBuffer.allocateDirect(values.size * 4).order(ByteOrder.nativeOrder()).asFloatBuffer().apply { put(values); position(0) }
@@ -162,7 +162,7 @@ class SpatialScanActivity : Activity(), GLSurfaceView.Renderer {
             val now = System.currentTimeMillis()
             if (now-lastStatsMs > 500) {
                 lastStatsMs = now
-                val message = getString(R.string.room_scan_stats,planes.size,points.size)
+                val counts = synchronized(this) { planes.size to points.size }\n                val message = getString(R.string.room_scan_stats,counts.first,counts.second)
                 runOnUiThread { if (!isFinishing) { stats.text = message; saveButton.isEnabled = points.isNotEmpty() || planes.isNotEmpty() } }
             }
         } catch (error: Exception) { runOnUiThread { if (!isFinishing) stats.text = getString(R.string.room_scan_error,error.message ?: "") } }
@@ -211,7 +211,7 @@ class SpatialScanActivity : Activity(), GLSurfaceView.Renderer {
                 .put("planes",planeArray).put("pointCloud",pointArray)
             val file = File(filesDir,"vroom_room_scan.json")
             file.writeText(result.toString())
-            stats.text = getString(R.string.room_scan_saved,file.absolutePath,points.size,planes.size)
+            stats.text = getString(R.string.room_scan_saved,file.absolutePath,snapshot.first.size,snapshot.second.size)
         } catch (error: Exception) { stats.text = getString(R.string.room_scan_error,error.message ?: "") }
     }
 }
