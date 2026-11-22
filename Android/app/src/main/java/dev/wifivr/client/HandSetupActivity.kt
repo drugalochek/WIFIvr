@@ -154,8 +154,8 @@ class HandSetupActivity : ComponentActivity() {
             isAllCaps = false
             setOnClickListener {
                 useFrontCamera = !useFrontCamera
-                overlay.updateHands(emptyList())
-                overlay.updateArms(emptyList())
+                this@HandSetupActivity.overlay.updateHands(emptyList())
+                this@HandSetupActivity.overlay.updateArms(emptyList())
                 startCamera()
             }
         }
