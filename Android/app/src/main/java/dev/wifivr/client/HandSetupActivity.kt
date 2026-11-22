@@ -269,8 +269,10 @@ class HandSetupActivity : ComponentActivity() {
                 val points = JSONArray()
                 landmarks.forEach { point ->
                     points.put(JSONObject()
-                        .put("x", point.x().toDouble())
-                        .put("y", point.y().toDouble())
+                        // MediaPipe may return landmarks just outside the image rectangle.
+                        // Clamp image-space axes so the wire protocol stays normalized.
+                        .put("x", point.x().coerceIn(0f, 1f).toDouble())
+                        .put("y", point.y().coerceIn(0f, 1f).toDouble())
                         .put("z", point.z().toDouble()))
                 }
                 if (points.length() == 21) {
