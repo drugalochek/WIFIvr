@@ -13,7 +13,9 @@
 - [x] Add Windows PC webcam preview mode
 - [x] Add persisted desktop settings profile for overlay and locomotion
 - [x] Add automatic reconnect for the Android camera uplink
-- [ ] Add full-body pose estimation from the PC webcam and publish joint telemetry
+- [x] Add MediaPipe full-body pose estimation on Android camera and publish 33 body landmarks
+- [x] Render hand and body skeletons over the phone-camera preview in Windows Desktop
+- [ ] Add full-body pose estimation from the separate PC webcam and publish joint telemetry
 - [ ] Measure packet rate, loss, and end-to-end latency on real hardware
 
 ## Milestone 1 — VR runtime
@@ -28,6 +30,7 @@
 - [ ] Capture desktop/game frames on Windows
 - [ ] Encode and stream video to Android over a low-latency transport
 - [ ] Render separate left/right eye views on Android
+- [x] Add adjustable Android headset-preview FOV control (60°–110°, visual crop/scale only)
 - [ ] Add lens distortion and headset geometry calibration
 - [ ] Render and interact with a spatial overlay in the Android VR view
 
