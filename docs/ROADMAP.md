@@ -19,7 +19,8 @@
 - [ ] Measure packet rate, loss, and end-to-end latency on real hardware
 
 ## Milestone 1 — VR runtime
-- [ ] Build a SteamVR/OpenVR driver registering the VRoom HMD and two hand controllers
+- [x] Compile an initial SteamVR/OpenVR server driver that registers a virtual VRoom HMD and receives phone IMU orientation via the Windows host
+- [ ] Extend the driver with two hand-controller devices and calibrated hand inputs
 - [ ] Connect driver poses and hand input to validated tracking state
 - [ ] Calibrate head neutral direction and map coordinate axes
 - [ ] Convert camera landmarks into calibrated controller pose and gesture inputs
