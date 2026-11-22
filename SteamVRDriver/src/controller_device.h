@@ -50,26 +50,22 @@ public:
         if (response && size) response[0] = '\0';
     }
 
-    // MediaPipe world landmarks are hand-centred; they cannot establish room-space position.
-    // Keep the tracked-device pose invalid until camera-to-HMD calibration exists.
-    vr::DriverPose_t GetPose() override {
-        vr::DriverPose_t pose{};
-        pose.qWorldFromDriverRotation = {1.0, 0.0, 0.0, 0.0};
-        pose.qDriverFromHeadRotation = {1.0, 0.0, 0.0, 0.0};
-        pose.qRotation = {1.0, 0.0, 0.0, 0.0};
-        pose.result = vr::TrackingResult_Uninitialized;
-        pose.poseIsValid = false;
-        pose.deviceIsConnected = true;
-        return pose;
-    }
-
-    void SetHandPose(const std::array<std::array<float, 3>, 21>& points, float confidence) {
+    // rootPositionHead is an approximate wrist position in HMD-local OpenVR metres.
+    // It is estimated from palm width and the phone camera image, not a calibrated depth sensor.
+    void SetHandPose(const std::array<std::array<float, 3>, 21>& points, float confidence,
+                     const std::array<float, 3>& rootPositionHead) {
         if (!std::isfinite(confidence) || confidence < 0.35f) {
             ClearSkeleton();
             return;
         }
         for (const auto& p : points) {
             if (!std::isfinite(p[0]) || !std::isfinite(p[1]) || !std::isfinite(p[2])) {
+                ClearSkeleton();
+                return;
+            }
+        }
+        for (float value : rootPositionHead) {
+            if (!std::isfinite(value) || std::abs(value) > 3.0f) {
                 ClearSkeleton();
                 return;
             }
@@ -115,6 +111,7 @@ public:
         {
             std::lock_guard<std::mutex> lock(skeletonMutex_);
             skeletonTransforms_ = bones;
+            rootPositionHead_ = rootPositionHead;
         }
         hasSkeleton_.store(true, std::memory_order_release);
         lastUpdateMs_.store(NowMs(), std::memory_order_release);
@@ -125,7 +122,7 @@ public:
         lastUpdateMs_.store(NowMs(), std::memory_order_release);
     }
 
-    void RunFrame() {
+    void RunFrame(const vr::DriverPose_t& hmdPose) {
         if (objectId_ == vr::k_unTrackedDeviceIndexInvalid) return;
         const auto now = NowMs();
         const bool fresh = hasSkeleton_.load(std::memory_order_acquire) &&
@@ -133,9 +130,11 @@ public:
         if (!fresh) hasSkeleton_.store(false, std::memory_order_release);
 
         std::array<vr::VRBoneTransform_t, 31> snapshot{};
+        std::array<float, 3> root{};
         if (fresh) {
             std::lock_guard<std::mutex> lock(skeletonMutex_);
             snapshot = skeletonTransforms_;
+            root = rootPositionHead_;
         } else {
             for (auto& bone : snapshot) {
                 bone.position = {0.0f, 0.0f, 0.0f, 1.0f};
@@ -147,7 +146,32 @@ public:
             snapshot.data(), static_cast<uint32_t>(snapshot.size()));
         input->UpdateSkeletonComponent(skeleton_, vr::VRSkeletalMotionRange_WithoutController,
             snapshot.data(), static_cast<uint32_t>(snapshot.size()));
-        vr::VRServerDriverHost()->TrackedDevicePoseUpdated(objectId_, GetPose(), sizeof(vr::DriverPose_t));
+
+        vr::DriverPose_t handPose{};
+        handPose.qWorldFromDriverRotation = hmdPose.qWorldFromDriverRotation;
+        handPose.qDriverFromHeadRotation = hmdPose.qDriverFromHeadRotation;
+        handPose.qRotation = hmdPose.qRotation;
+        handPose.vecPosition[0] = hmdPose.vecPosition[0];
+        handPose.vecPosition[1] = hmdPose.vecPosition[1];
+        handPose.vecPosition[2] = hmdPose.vecPosition[2];
+        if (fresh && hmdPose.poseIsValid) {
+            const Quat headRotation{hmdPose.qRotation.w, hmdPose.qRotation.x,
+                                    hmdPose.qRotation.y, hmdPose.qRotation.z};
+            const Vec3 local{root[0], root[1], root[2]};
+            const Vec3 worldOffset = Rotate(headRotation, local);
+            handPose.vecPosition[0] += worldOffset.x;
+            handPose.vecPosition[1] += worldOffset.y;
+            handPose.vecPosition[2] += worldOffset.z;
+            handPose.result = vr::TrackingResult_Running_OK;
+            handPose.poseIsValid = true;
+        } else {
+            handPose.result = vr::TrackingResult_Uninitialized;
+            handPose.poseIsValid = false;
+        }
+        handPose.deviceIsConnected = true;
+        handPose.willDriftInYaw = hmdPose.willDriftInYaw;
+        handPose.shouldApplyHeadModel = false;
+        vr::VRServerDriverHost()->TrackedDevicePoseUpdated(objectId_, handPose, sizeof(vr::DriverPose_t));
     }
 
 private:
@@ -198,4 +222,5 @@ private:
     std::atomic<int64_t> lastUpdateMs_{0};
     std::mutex skeletonMutex_;
     std::array<vr::VRBoneTransform_t, 31> skeletonTransforms_{};
+    std::array<float, 3> rootPositionHead_{};
 };
