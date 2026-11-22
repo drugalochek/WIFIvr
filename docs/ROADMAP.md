@@ -13,7 +13,7 @@
 - [ ] Add camera capture and hand landmarks
 - [x] Define hand-pose packet schema
 - [x] Extend Windows receiver to validate and retain head/hand tracking snapshots
-- [ ] Send MediaPipe hand landmarks from Android to Windows
+- [x] Send MediaPipe hand landmarks from Android to Windows
 
 ## Milestone 2 — display transport
 - [ ] Capture desktop/game frames
@@ -21,7 +21,8 @@
 - [ ] Add side-by-side stereo presentation and lens calibration
 
 ## Milestone 3 — VR runtime
-- [ ] Integrate an OpenXR runtime/driver path (native runtime/driver work remains separate from the UDP receiver)
+- [ ] Build a SteamVR/OpenVR driver that registers the VRoom HMD and two hand controllers
+- [ ] Connect driver poses and hand input to the validated UDP tracking state
 - [ ] Map head pose and hand poses to the runtime
 - [ ] Validate compatibility with selected PC VR titles
 
