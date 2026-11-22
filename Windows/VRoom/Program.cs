@@ -53,6 +53,10 @@ internal sealed class DashboardForm : Form
     private readonly CheckBox _enableArmSwing = new() { Text = "Arm Swing · движение руками", Checked = true, AutoSize = true };
     private readonly CheckBox _enableWalkInPlace = new() { Text = "Walk in Place · шаги на месте (нужна камера тела)", AutoSize = true };
     private readonly ComboBox _locomotionMode = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 220 };
+    private readonly ComboBox _overlayAnchor = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 220 };
+    private readonly NumericUpDown _overlayScale = new() { Minimum = 50, Maximum = 200, Value = 100, Width = 100 };
+    private readonly NumericUpDown _overlayDistance = new() { Minimum = 30, Maximum = 200, Value = 80, Width = 100 };
+    private readonly Label _profileStatus = new() { AutoSize = true, ForeColor = Color.LightSteelBlue, Text = "Профиль не сохранён" };
 
     public DashboardForm()
     {
@@ -107,6 +111,7 @@ internal sealed class DashboardForm : Form
         tabs.TabPages.Add(BuildPcCameraTab());
         tabs.TabPages.Add(BuildSettingsTab());
         root.Controls.Add(tabs);
+        LoadProfile();
 
         var bottom = new TableLayoutPanel { Dock = DockStyle.Fill, RowCount = 2, ColumnCount = 1 };
         bottom.RowStyles.Add(new RowStyle(SizeType.AutoSize));
@@ -178,7 +183,11 @@ internal sealed class DashboardForm : Form
         var page = new TabPage("VR и управление") { BackColor = BackColor, AutoScroll = true };
         var stack = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.TopDown, WrapContents = false, AutoScroll = true, Padding = new Padding(20) };
         stack.Controls.Add(Section("Пространственный оверлей")); stack.Controls.Add(_enableOverlay);
-        stack.Controls.Add(new Label { Text = "Профиль меню. Фактическое отображение в шлеме появится после реализации VR display/runtime.", AutoSize = true, ForeColor = Color.LightSteelBlue });
+        stack.Controls.Add(new Label { Text = "Параметры будущего меню: место закрепления, масштаб и расстояние.", AutoSize = true, ForeColor = Color.LightSteelBlue });
+        _overlayAnchor.Items.AddRange(new object[] { "Перед глазами", "Левое запястье", "Правое запястье", "Закрепить в пространстве" }); _overlayAnchor.SelectedIndex = 0;
+        stack.Controls.Add(new Label { Text = "Закрепление меню", AutoSize = true, ForeColor = Color.White }); stack.Controls.Add(_overlayAnchor);
+        stack.Controls.Add(LabeledNumeric("Масштаб меню (%)", _overlayScale));
+        stack.Controls.Add(LabeledNumeric("Расстояние (см)", _overlayDistance));
         stack.Controls.Add(Section("Передвижение"));
         _locomotionMode.Items.AddRange(new object[] { "Arm Swing", "Walk in Place", "Hybrid", "Отключено" }); _locomotionMode.SelectedIndex = 0;
         stack.Controls.Add(new Label { Text = "Режим передвижения", AutoSize = true, ForeColor = Color.White }); stack.Controls.Add(_locomotionMode);
@@ -190,7 +199,47 @@ internal sealed class DashboardForm : Form
         stack.Controls.Add(Section("Сеть и качество"));
         stack.Controls.Add(new Label { Text = "Телеметрия: UDP 9000 · Видео телефона: TCP 9001. Используйте частную сеть; не открывайте порты в интернет.", AutoSize = true, ForeColor = Color.LightSteelBlue, MaximumSize = new Size(800, 0) });
         stack.Controls.Add(new Label { Text = "Рекомендуется подключить ПК к роутеру по Ethernet, телефон — по Wi-Fi того же роутера.", AutoSize = true, ForeColor = Color.LightSteelBlue });
+        var save = new Button { Text = "Сохранить профиль VRoom", AutoSize = true, BackColor = Color.FromArgb(73, 226, 178), ForeColor = Color.FromArgb(8, 28, 28), FlatStyle = FlatStyle.Flat };
+        save.Click += (_, _) => SaveProfile(); stack.Controls.Add(save); stack.Controls.Add(_profileStatus);
         page.Controls.Add(stack); return page;
+    }
+
+    private static Control LabeledNumeric(string title, NumericUpDown input) { var panel = new FlowLayoutPanel { FlowDirection = FlowDirection.LeftToRight, WrapContents = false, AutoSize = true }; panel.Controls.Add(new Label { Text = title, AutoSize = true, ForeColor = Color.White, Padding = new Padding(0, 5, 10, 0) }); panel.Controls.Add(input); return panel; }
+
+    private void SaveProfile()
+    {
+        try
+        {
+            var folder = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "VRoom");
+            Directory.CreateDirectory(folder);
+            var profile = new { overlayEnabled = _enableOverlay.Checked, overlayAnchor = _overlayAnchor.SelectedIndex, overlayScale = _overlayScale.Value, overlayDistanceCm = _overlayDistance.Value, locomotionMode = _locomotionMode.SelectedIndex, armSwingEnabled = _enableArmSwing.Checked, walkInPlaceEnabled = _enableWalkInPlace.Checked, armSensitivity = _armSensitivity.Value, walkSensitivity = _walkSensitivity.Value, motionSmoothing = _motionSmoothing.Value };
+            File.WriteAllText(Path.Combine(folder, "settings.json"), JsonSerializer.Serialize(profile, new JsonSerializerOptions { WriteIndented = true }));
+            _profileStatus.Text = "Профиль сохранён: " + folder;
+            Log("Профиль настроек VRoom сохранён.");
+        }
+        catch (Exception ex) { _profileStatus.Text = "Ошибка сохранения: " + ex.Message; }
+    }
+
+    private void LoadProfile()
+    {
+        try
+        {
+            var file = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "VRoom", "settings.json");
+            if (!File.Exists(file)) return;
+            using var doc = JsonDocument.Parse(File.ReadAllText(file)); var p = doc.RootElement;
+            if (p.TryGetProperty("overlayEnabled", out var oe)) _enableOverlay.Checked = oe.GetBoolean();
+            if (p.TryGetProperty("overlayAnchor", out var oa)) _overlayAnchor.SelectedIndex = Math.Clamp(oa.GetInt32(), 0, Math.Max(0, _overlayAnchor.Items.Count - 1));
+            if (p.TryGetProperty("overlayScale", out var os)) _overlayScale.Value = Math.Clamp(os.GetDecimal(), _overlayScale.Minimum, _overlayScale.Maximum);
+            if (p.TryGetProperty("overlayDistanceCm", out var od)) _overlayDistance.Value = Math.Clamp(od.GetDecimal(), _overlayDistance.Minimum, _overlayDistance.Maximum);
+            if (p.TryGetProperty("locomotionMode", out var lm)) _locomotionMode.SelectedIndex = Math.Clamp(lm.GetInt32(), 0, Math.Max(0, _locomotionMode.Items.Count - 1));
+            if (p.TryGetProperty("armSwingEnabled", out var ae)) _enableArmSwing.Checked = ae.GetBoolean();
+            if (p.TryGetProperty("walkInPlaceEnabled", out var we)) _enableWalkInPlace.Checked = we.GetBoolean();
+            if (p.TryGetProperty("armSensitivity", out var ass)) _armSensitivity.Value = Math.Clamp(ass.GetInt32(), _armSensitivity.Minimum, _armSensitivity.Maximum);
+            if (p.TryGetProperty("walkSensitivity", out var wss)) _walkSensitivity.Value = Math.Clamp(wss.GetInt32(), _walkSensitivity.Minimum, _walkSensitivity.Maximum);
+            if (p.TryGetProperty("motionSmoothing", out var ms)) _motionSmoothing.Value = Math.Clamp(ms.GetInt32(), _motionSmoothing.Minimum, _motionSmoothing.Maximum);
+            _profileStatus.Text = "Загружен сохранённый профиль";
+        }
+        catch (Exception ex) { _profileStatus.Text = "Не удалось загрузить профиль: " + ex.Message; }
     }
 
     private static Label Section(string text) => new() { Text = text, AutoSize = true, ForeColor = Color.FromArgb(73, 226, 178), Font = new Font("Segoe UI", 14, FontStyle.Bold), Padding = new Padding(0, 18, 0, 6) };
