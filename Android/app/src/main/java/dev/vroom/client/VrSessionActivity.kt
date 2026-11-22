@@ -1,7 +1,7 @@
 package dev.vroom.client
 
 import android.Manifest
-import android.app.Activity
+import androidx.activity.ComponentActivity
 import android.content.pm.PackageManager
 import android.content.pm.ActivityInfo
 import android.graphics.Bitmap
@@ -54,7 +54,7 @@ import kotlin.math.sqrt
  * and the incoming stereo display all run in this Activity so one feature cannot
  * pause another by taking over the Activity lifecycle.
  */
-class VrSessionActivity : Activity(), SensorEventListener {
+class VrSessionActivity : ComponentActivity(), SensorEventListener {
     private lateinit var preview: StereoSessionView
     private lateinit var sensors: SensorManager
     private var rotationSensor: Sensor? = null
