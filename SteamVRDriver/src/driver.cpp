@@ -154,7 +154,7 @@ public:
         pose.qWorldFromDriverRotation = {1.0, 0.0, 0.0, 0.0};
         pose.qDriverFromHeadRotation = {1.0, 0.0, 0.0, 0.0};
         pose.qRotation = {
-            1.0,
+            qw_.load(std::memory_order_relaxed),
             qx_.load(std::memory_order_relaxed),
             qy_.load(std::memory_order_relaxed),
             qz_.load(std::memory_order_relaxed)
