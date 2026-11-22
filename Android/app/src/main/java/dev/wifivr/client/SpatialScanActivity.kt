@@ -53,6 +53,8 @@ class SpatialScanActivity : Activity(), GLSurfaceView.Renderer {
     @Volatile private var scanActive = false
     @Volatile private var activityResumed = false
     @Volatile private var waitingForArInstall = false
+    @Volatile private var surfaceWidth = 0
+    @Volatile private var surfaceHeight = 0
 
     private fun floatBuffer(values: FloatArray): FloatBuffer =
         ByteBuffer.allocateDirect(values.size * 4).order(ByteOrder.nativeOrder())
@@ -195,6 +197,7 @@ class SpatialScanActivity : Activity(), GLSurfaceView.Renderer {
     }
 
     override fun onSurfaceCreated(gl: GL10?, config: EGLConfig?) {
+        GLES20.glClearColor(0.03f, 0.05f, 0.09f, 1f)
         val textures = IntArray(1)
         GLES20.glGenTextures(1, textures, 0)
         cameraTexture = textures[0]
@@ -230,12 +233,17 @@ class SpatialScanActivity : Activity(), GLSurfaceView.Renderer {
     }
 
     override fun onSurfaceChanged(gl: GL10?, width: Int, height: Int) {
+        surfaceWidth = width
+        surfaceHeight = height
         GLES20.glViewport(0, 0, width, height)
     }
 
     override fun onDrawFrame(gl: GL10?) {
         val activeSession = session ?: return
         try {
+            if (surfaceWidth > 0 && surfaceHeight > 0) {
+                activeSession.setDisplayGeometry(windowManager.defaultDisplay.rotation, surfaceWidth, surfaceHeight)
+            }
             val frame = activeSession.update()
             val transformedUv = floatBuffer(FloatArray(8))
             // Rewind buffers because ARCore advances their positions while transforming UVs.
