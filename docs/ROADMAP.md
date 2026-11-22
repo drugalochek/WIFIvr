@@ -28,10 +28,12 @@ The checkboxes below distinguish implemented code from hardware validation. A fe
 - [x] Register left/right OpenVR hand endpoints and create `/input/skeleton/left` and `/input/skeleton/right` components
 - [x] Relay complete hand-pose v2 packets through Windows to the OpenVR driver
 - [x] Map MediaPipe's 21 hand-centred world landmarks into the 31-bone OpenVR parent-space hierarchy
+- [x] Estimate an initial HMD-local wrist root from apparent palm width and publish a tracked hand pose relative to the HMD
 - [x] Update both `WithController` and `WithoutController` skeletal motion ranges; do not synthesize trigger/grip buttons
 - [ ] Compile and validate the skeletal driver against the target SteamVR runtime
 - [ ] Verify bone orientation, handedness, and articulated hand rendering in a SteamVR skeletal-input test application
-- [ ] Convert the hand root into calibrated VR-room coordinates; MediaPipe world landmarks alone cannot provide this
+- [ ] Replace the nominal palm-width/focal-scale root estimate with measured camera intrinsics and per-user palm calibration
+- [ ] Calibrate camera-to-HMD position/orientation and verify left/right coordinate axes in the headset
 - [ ] Add neutral-pose calibration and coordinate-axis mapping
 - [ ] Validate controller poses and inputs in SteamVR's device view and test applications
 - [ ] Validate compatibility with selected PC VR titles
@@ -42,6 +44,7 @@ The checkboxes below distinguish implemented code from hardware validation. A fe
 - [x] Encode captured frames as JPEG and relay them over loopback TCP 9004
 - [x] Relay compositor frames from Windows to Android over TCP 9002
 - [x] Add Android TCP receiver and VR display surface
+- [x] Run head IMU, MediaPipe hand tracking, camera uplink, and stereo display receiver in one Android VR session
 - [x] Split side-by-side frames into left/right eye regions on Android
 - [ ] Validate actual SteamVR compositor frames arrive continuously on the phone
 - [ ] Measure frame rate, frame age, dropped frames, and motion-to-photon latency
