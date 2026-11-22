@@ -93,9 +93,11 @@ jobs:
         run: |
           New-Item -ItemType Directory -Force artifacts/driver_vroom/bin/win64 | Out-Null
           New-Item -ItemType Directory -Force artifacts/driver_vroom/resources/settings | Out-Null
+          New-Item -ItemType Directory -Force artifacts/driver_vroom/resources/input | Out-Null
           Copy-Item SteamVRDriver/build/Release/driver_vroom.dll artifacts/driver_vroom/bin/win64/
           Copy-Item SteamVRDriver/driver.vrdrivermanifest artifacts/driver_vroom/
           Copy-Item SteamVRDriver/resources/settings/default.vrsettings artifacts/driver_vroom/resources/settings/
+          Copy-Item SteamVRDriver/resources/input/vroom_controller_profile.json artifacts/driver_vroom/resources/input/
       - name: Upload SteamVR driver
         uses: actions/upload-artifact@v4
         with:
