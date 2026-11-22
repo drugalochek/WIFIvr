@@ -7,6 +7,7 @@ import android.graphics.Color
 import android.graphics.Typeface
 import android.opengl.GLES11Ext
 import android.opengl.GLES20
+import android.opengl.Matrix
 import android.opengl.GLSurfaceView
 import android.os.Bundle
 import android.os.Environment
@@ -48,6 +49,10 @@ class SpatialScanActivity : Activity(), GLSurfaceView.Renderer {
     private var positionHandle = 0
     private var uvHandle = 0
     private var samplerHandle = 0
+    private var gridProgram = 0
+    private var gridPositionHandle = 0
+    private var gridMvpHandle = 0
+    private var gridColorHandle = 0
     private val vertices = floatBuffer(floatArrayOf(-1f, -1f, 1f, -1f, -1f, 1f, 1f, 1f))
     private val rawUv = floatBuffer(floatArrayOf(0f, 0f, 1f, 0f, 0f, 1f, 1f, 1f))
     @Volatile private var scanActive = false
@@ -223,6 +228,22 @@ class SpatialScanActivity : Activity(), GLSurfaceView.Renderer {
         positionHandle = GLES20.glGetAttribLocation(program, "aPosition")
         uvHandle = GLES20.glGetAttribLocation(program, "aUv")
         samplerHandle = GLES20.glGetUniformLocation(program, "sTexture")
+
+        val gridVertex = compileShader(
+            GLES20.GL_VERTEX_SHADER,
+            "attribute vec3 aPosition; uniform mat4 uMvp; void main(){ gl_Position=uMvp*vec4(aPosition,1.0); }"
+        )
+        val gridFragment = compileShader(
+            GLES20.GL_FRAGMENT_SHADER,
+            "precision mediump float; uniform vec4 uColor; void main(){ gl_FragColor=uColor; }"
+        )
+        gridProgram = GLES20.glCreateProgram()
+        GLES20.glAttachShader(gridProgram, gridVertex)
+        GLES20.glAttachShader(gridProgram, gridFragment)
+        GLES20.glLinkProgram(gridProgram)
+        gridPositionHandle = GLES20.glGetAttribLocation(gridProgram, "aPosition")
+        gridMvpHandle = GLES20.glGetUniformLocation(gridProgram, "uMvp")
+        gridColorHandle = GLES20.glGetUniformLocation(gridProgram, "uColor")
     }
 
     private fun compileShader(type: Int, source: String): Int {
@@ -252,6 +273,7 @@ class SpatialScanActivity : Activity(), GLSurfaceView.Renderer {
             frame.transformDisplayUvCoords(rawUv, transformedUv)
             transformedUv.position(0)
             drawCamera(transformedUv)
+            drawDetectedPlaneGrid(activeSession, frame)
             collectFrame(frame)
             val now = System.currentTimeMillis()
             if (now - lastStatsMs > 500L) {
@@ -287,6 +309,97 @@ class SpatialScanActivity : Activity(), GLSurfaceView.Renderer {
         GLES20.glDrawArrays(GLES20.GL_TRIANGLE_STRIP, 0, 4)
         GLES20.glDisableVertexAttribArray(positionHandle)
         GLES20.glDisableVertexAttribArray(uvHandle)
+    }
+
+    /**
+     * Draws ARCore's tracked horizontal and vertical plane polygons as a world-anchored
+     * wire grid. This is live geometry, not a completed semantic furniture scan.
+     */
+    private fun drawDetectedPlaneGrid(activeSession: Session, frame: Frame) {
+        if (gridProgram == 0) return
+        val view = FloatArray(16)
+        val projection = FloatArray(16)
+        val viewProjection = FloatArray(16)
+        frame.camera.getViewMatrix(view, 0)
+        frame.camera.getProjectionMatrix(projection, 0, 0.1f, 100f)
+        Matrix.multiplyMM(viewProjection, 0, projection, 0, view, 0)
+
+        GLES20.glUseProgram(gridProgram)
+        GLES20.glEnable(GLES20.GL_BLEND)
+        GLES20.glBlendFunc(GLES20.GL_SRC_ALPHA, GLES20.GL_ONE_MINUS_SRC_ALPHA)
+        GLES20.glLineWidth(2f)
+        GLES20.glEnableVertexAttribArray(gridPositionHandle)
+
+        activeSession.getAllTrackables(Plane::class.java).forEach { plane ->
+            if (plane.trackingState != TrackingState.TRACKING || plane.subsumedBy != null) return@forEach
+            val polygonBuffer = plane.polygon
+            val polygon = ArrayList<Pair<Float, Float>>()
+            polygonBuffer.position(0)
+            while (polygonBuffer.remaining() >= 2) polygon.add(polygonBuffer.get() to polygonBuffer.get())
+            if (polygon.size < 3) return@forEach
+
+            val minX = polygon.minOf { it.first }
+            val maxX = polygon.maxOf { it.first }
+            val minZ = polygon.minOf { it.second }
+            val maxZ = polygon.maxOf { it.second }
+            val localLines = ArrayList<Float>()
+
+            // Polygon outline.
+            for (i in polygon.indices) {
+                val a = polygon[i]
+                val b = polygon[(i + 1) % polygon.size]
+                localLines.addAll(listOf(a.first, 0.006f, a.second, b.first, 0.006f, b.second))
+            }
+
+            fun inside(x: Float, z: Float): Boolean {
+                var hit = false
+                var j = polygon.lastIndex
+                for (i in polygon.indices) {
+                    val xi = polygon[i].first; val zi = polygon[i].second
+                    val xj = polygon[j].first; val zj = polygon[j].second
+                    if ((zi > z) != (zj > z) &&
+                        x < (xj - xi) * (z - zi) / ((zj - zi).let { if (kotlin.math.abs(it) < 1e-6f) 1e-6f else it }) + xi) hit = !hit
+                    j = i
+                }
+                return hit
+            }
+
+            // Clip each 10 cm grid line to the detected plane polygon.
+            fun addClippedLine(vertical: Boolean, fixed: Float, start: Float, end: Float) {
+                val samples = 160
+                var previous: Pair<Float, Float>? = null
+                for (step in 0..samples) {
+                    val along = start + (end - start) * step / samples
+                    val x = if (vertical) fixed else along
+                    val z = if (vertical) along else fixed
+                    val current = if (inside(x, z)) x to z else null
+                    if (current != null && previous != null) {
+                        localLines.addAll(listOf(previous.first, 0.008f, previous.second, current.first, 0.008f, current.second))
+                    }
+                    previous = current
+                }
+            }
+            var x = kotlin.math.ceil(minX / 0.10f) * 0.10f
+            while (x <= maxX) { addClippedLine(true, x, minZ, maxZ); x += 0.10f }
+            var z = kotlin.math.ceil(minZ / 0.10f) * 0.10f
+            while (z <= maxZ) { addClippedLine(false, z, minX, maxX); z += 0.10f }
+
+            if (localLines.isEmpty()) return@forEach
+            val localBuffer = floatBuffer(localLines.toFloatArray())
+            val model = FloatArray(16)
+            plane.centerPose.toMatrix(model, 0)
+            val mvp = FloatArray(16)
+            Matrix.multiplyMM(mvp, 0, viewProjection, 0, model, 0)
+            GLES20.glUniformMatrix4fv(gridMvpHandle, 1, false, mvp, 0)
+            val color = if (plane.type == Plane.Type.VERTICAL)
+                floatArrayOf(0.25f, 0.78f, 1f, 0.85f)
+            else floatArrayOf(0.2f, 1f, 0.65f, 0.85f)
+            GLES20.glUniform4fv(gridColorHandle, 1, color, 0)
+            GLES20.glVertexAttribPointer(gridPositionHandle, 3, GLES20.GL_FLOAT, false, 0, localBuffer)
+            GLES20.glDrawArrays(GLES20.GL_LINES, 0, localLines.size / 3)
+        }
+        GLES20.glDisableVertexAttribArray(gridPositionHandle)
+        GLES20.glDisable(GLES20.GL_BLEND)
     }
 
     private fun collectFrame(frame: Frame) {
