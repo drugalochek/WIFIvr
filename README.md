@@ -5,7 +5,7 @@
 Android phone as a wireless VR headset, Windows PC as the host.
 
 ## Project status
-Initial repository scaffold. First milestone: establish low-latency phone-to-PC head-pose streaming over the local Wi-Fi network.
+The current prototype streams head orientation and checks hand landmarks. Room-scale positional tracking and boundary setup are planned as the next major milestone.
 
 ## Planned components
 - `Android/` — Android client (camera, IMU, stereo display, network transport)
