@@ -11,8 +11,8 @@ android {
         applicationId = "dev.wifivr.client"
         minSdk = 28
         targetSdk = 35
-        versionCode = 7
-        versionName = "0.2.6"
+        versionCode = 8
+        versionName = "0.2.7"
     }
 
     compileOptions {
