@@ -70,6 +70,8 @@ class HandSetupActivity : ComponentActivity() {
     @Volatile private var handSocket: DatagramSocket? = null
     private val handSequence = AtomicLong(0)
     private val cameraStreamExecutor = Executors.newSingleThreadExecutor()
+    private val cameraConnectionExecutor = Executors.newSingleThreadExecutor()
+    @Volatile private var cameraConnectionRunning = true
     private val cameraFrameInFlight = AtomicBoolean(false)
     @Volatile private var cameraStreamSocket: Socket? = null
     @Volatile private var cameraStreamOutput: DataOutputStream? = null
@@ -88,18 +90,31 @@ class HandSetupActivity : ComponentActivity() {
         buildScreen()
         val pcAddress = intent.getStringExtra("pc_address")?.trim().orEmpty()
         if (pcAddress.isNotEmpty()) {
-            cameraExecutor.execute {
+            cameraConnectionExecutor.execute {
                 try {
                     handDestination = InetAddress.getByName(pcAddress)
                     handSocket = DatagramSocket()
-                    val stream = Socket()
-                    stream.tcpNoDelay = true
-                    stream.connect(java.net.InetSocketAddress(handDestination, 9001), 2500)
-                    cameraStreamSocket = stream
-                    cameraStreamOutput = DataOutputStream(stream.getOutputStream())
-                    runOnUiThread { status.text = "Камера подключена к VRoom Desktop · TCP 9001" }
                 } catch (error: Exception) {
-                    runOnUiThread { status.text = "Видео не подключено: ${error.message ?: ""}. Трекинг попробует продолжить работу." }
+                    runOnUiThread { status.text = "Ошибка адреса ПК: ${error.message ?: ""}" }
+                    return@execute
+                }
+                while (cameraConnectionRunning && !Thread.currentThread().isInterrupted) {
+                    val current = cameraStreamSocket
+                    if (current == null || current.isClosed || !current.isConnected) {
+                        try {
+                            val stream = Socket()
+                            stream.tcpNoDelay = true
+                            stream.connect(java.net.InetSocketAddress(handDestination, 9001), 2000)
+                            cameraStreamSocket = stream
+                            cameraStreamOutput = DataOutputStream(stream.getOutputStream())
+                            runOnUiThread { status.text = "Камера подключена к VRoom Desktop · TCP 9001" }
+                        } catch (error: Exception) {
+                            runOnUiThread { status.text = "Ожидание VRoom Desktop · повторное подключение..." }
+                            try { Thread.sleep(2000) } catch (_: InterruptedException) { break }
+                        }
+                    } else {
+                        try { Thread.sleep(500) } catch (_: InterruptedException) { break }
+                    }
                 }
             }
         }
@@ -371,10 +386,12 @@ class HandSetupActivity : ComponentActivity() {
         handLandmarker?.close()
         handSocket?.close()
         handSocket = null
+        cameraConnectionRunning = false
         try { cameraStreamSocket?.close() } catch (_: Exception) { }
         cameraStreamSocket = null
         cameraStreamOutput = null
         cameraStreamExecutor.shutdownNow()
+        cameraConnectionExecutor.shutdownNow()
         cameraExecutor.shutdown()
         super.onDestroy()
     }
