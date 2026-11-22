@@ -376,10 +376,11 @@ class VrSessionActivity : ComponentActivity(), SensorEventListener {
                 socket.tcpNoDelay = true
                 socket.connect(InetSocketAddress(host, 9002), 5000)
                 val input = DataInputStream(BufferedInputStream(socket.getInputStream()))
-                preview.post { preview.setConnectionText("Поток SteamVR подключён") }
+                preview.post { preview.setConnectionText("Канал SteamVR подключён · ожидание первого кадра…") }
                 var windowStart = SystemClock.elapsedRealtime()
                 var frameCount = 0
                 var fps = 0f
+                var firstFrameShown = false
                 while (running) {
                     val size = input.readInt()
                     if (size !in 4..4_000_000) throw IOException("Некорректный размер кадра: $size")
@@ -387,6 +388,10 @@ class VrSessionActivity : ComponentActivity(), SensorEventListener {
                     input.readFully(bytes)
                     val bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
                         ?: throw IOException("Не удалось декодировать JPEG")
+                    if (!firstFrameShown) {
+                        firstFrameShown = true
+                        preview.post { preview.setConnectionText("Первый кадр SteamVR получен · изображение выводится") }
+                    }
                     frameCount++
                     val now = SystemClock.elapsedRealtime()
                     if (now - windowStart >= 1000L) {
