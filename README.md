@@ -11,7 +11,7 @@
 - Android sends a throttled JPEG camera preview to Windows over TCP port 9001.
 - Windows displays the incoming phone camera stream alongside tracking telemetry.
 
-**Important:** this is not yet a SteamVR/OpenXR headset driver. PC game capture, low-latency stereo video streaming, calibrated per-eye rendering, 6DoF positional tracking, and virtual controller registration remain future integration milestones.
+**Important:** the current OpenVR driver is an initial virtual-HMD integration, not a finished headset. It registers an HMD and forwards phone IMU orientation through the Windows host. Its virtual-display callback does not yet forward compositor frames to the phone. The TCP 9002 path is currently a 15 FPS primary-desktop JPEG test; Android duplicates the same monoscopic frame into both eye panels. This is not true stereo game streaming. Controller registration, calibrated hand poses, 6DoF position, and OpenXR support remain future work.
 
 ## Tracking protocol
 
@@ -19,6 +19,7 @@ The Windows app receives UDP telemetry on port 9000 and a length-prefixed JPEG c
 - `head_pose` v1 — normalized device orientation quaternion.
 - `hand_pose` v1 — up to two hands, each with 21 image-space landmarks.
 - TCP 9001 — JPEG camera frames, each prefixed by a 4-byte big-endian frame length. The current Android preview sender targets up to 10 FPS.
+- TCP 9002 — primary Windows desktop JPEG preview at approximately 15 FPS, 1280×720. Android shows the same image in both eye panels for transport testing only.
 
 The phone clamps x/y image coordinates to [0, 1]. Landmark z is relative model depth and may be negative. The receiver stores/display the latest telemetry; it does not infer room-space controller poses from 2D camera landmarks.
 
@@ -30,7 +31,7 @@ The phone clamps x/y image coordinates to [0, 1]. Landmark z is relative model d
 4. Enter that address in VRoom on Android and connect.
 5. Allow VRoom through Windows Firewall on private networks only.
 
-The Windows host listens on UDP 9000 and TCP 9001. Start VRoom Desktop before opening the phone hand-tracking screen so the camera stream can connect. Allow both ports through Windows Firewall on private networks only. Do not expose them to the public internet.
+The Windows host listens on UDP 9000, TCP 9001 (phone camera upload), and TCP 9002 (monoscopic desktop preview download). Start VRoom Desktop before connecting the phone. Allow these ports through Windows Firewall on private networks only. Do not expose them to the public internet.
 
 ## Builds
 
