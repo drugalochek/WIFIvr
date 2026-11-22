@@ -20,7 +20,6 @@ import android.widget.Button
 import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.TextView
-import android.widget.SeekBar
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.ComponentActivity
 import androidx.camera.core.CameraSelector
@@ -68,7 +67,6 @@ class HandSetupActivity : ComponentActivity() {
     private var framesInWindow = 0
     private var fpsWindowStartMs = 0L
     private var headsetMode = false
-    @Volatile private var viewFovDegrees = 90
     private var boundPreview: Preview? = null
     private var boundAnalysis: ImageAnalysis? = null
     @Volatile private var handDestination: InetAddress? = null
@@ -92,7 +90,6 @@ class HandSetupActivity : ComponentActivity() {
         window.statusBarColor = Color.rgb(11, 16, 32)
         window.navigationBarColor = Color.rgb(11, 16, 32)
         cameraExecutor = Executors.newSingleThreadExecutor()
-        viewFovDegrees = getSharedPreferences("vroom_settings", MODE_PRIVATE).getInt("fov_degrees", 90).coerceIn(60, 110)
         buildScreen()
         val pcAddress = intent.getStringExtra("pc_address")?.trim().orEmpty()
         if (pcAddress.isNotEmpty()) {
@@ -201,7 +198,6 @@ class HandSetupActivity : ComponentActivity() {
         val root = FrameLayout(this).apply { setBackgroundColor(Color.rgb(11, 16, 32)) }
         previewView = PreviewView(this).apply { scaleType = PreviewView.ScaleType.FIT_CENTER }
         overlay = HandOverlayView(this)
-        overlay.fovDegrees = viewFovDegrees
         val infoPanel = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(18), dp(14), dp(18), dp(14))
@@ -217,22 +213,6 @@ class HandSetupActivity : ComponentActivity() {
         status = TextView(this).apply {
             text = getString(R.string.camera_starting); textSize = 13f
             setTextColor(Color.rgb(184, 204, 226)); setPadding(0, dp(5), 0, 0)
-        }
-        val fovLabel = TextView(this).apply { text = "FOV: ${viewFovDegrees}°"; textSize = 13f; setTextColor(Color.WHITE); setPadding(0, dp(10), 0, dp(2)) }
-        val fovSlider = SeekBar(this).apply {
-            max = 50
-            progress = viewFovDegrees - 60
-            contentDescription = "Поле зрения от 60 до 110 градусов"
-            setOnSeekBarChangeListener(object : android.widget.SeekBar.OnSeekBarChangeListener {
-                override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
-                    viewFovDegrees = 60 + progress
-                    getSharedPreferences("vroom_settings", MODE_PRIVATE).edit().putInt("fov_degrees", viewFovDegrees).apply()
-                    fovLabel.text = "FOV: $viewFovDegrees°"
-                    overlay.fovDegrees = viewFovDegrees
-                }
-                override fun onStartTrackingTouch(seekBar: SeekBar?) = Unit
-                override fun onStopTrackingTouch(seekBar: SeekBar?) = Unit
-            })
         }
         val modeButton = Button(this).apply {
             text = getString(R.string.switch_to_headset_mode); isAllCaps = false
@@ -256,7 +236,6 @@ class HandSetupActivity : ComponentActivity() {
             setOnClickListener { useFrontCamera = !useFrontCamera; this@HandSetupActivity.overlay.updateHands(emptyList()); startCamera() }
         }
         infoPanel.addView(heading); infoPanel.addView(status)
-        infoPanel.addView(fovLabel); infoPanel.addView(fovSlider)
         infoPanel.addView(cameraSwitchButton); infoPanel.addView(modeButton)
         root.addView(previewView, FrameLayout.LayoutParams(-1, -1))
         root.addView(overlay, FrameLayout.LayoutParams(-1, -1))
@@ -475,8 +454,6 @@ private class HandOverlayView(context: android.content.Context) : View(context) 
     @Volatile private var handPoints: List<List<Pair<Float, Float>>> = emptyList()
     @Volatile private var cameraFrame: Bitmap? = null
     @Volatile private var stereoMode = false
-    @Volatile var fovDegrees = 90
-        set(value) { field = value.coerceIn(60, 110); postInvalidate() }
     fun updateFrame(bitmap: Bitmap) { cameraFrame = bitmap; postInvalidate() }
     fun updateHands(value: List<List<Pair<Float, Float>>>) { handPoints = value; postInvalidate() }
     fun setStereoMode(enabled: Boolean) { stereoMode = enabled; postInvalidate() }
@@ -511,17 +488,8 @@ private class HandOverlayView(context: android.content.Context) : View(context) 
             val top = (frame.height - cropHeight) / 2
             Rect(0, top, frame.width, top + cropHeight)
         }
-        val fovScale = 90f / fovDegrees.coerceIn(60, 110).toFloat()
-        val scaledWidth = destination.width() * fovScale
-        val scaledHeight = destination.height() * fovScale
-        val fovDestination = RectF(
-            destination.centerX() - scaledWidth / 2f,
-            destination.centerY() - scaledHeight / 2f,
-            destination.centerX() + scaledWidth / 2f,
-            destination.centerY() + scaledHeight / 2f
-        )
-        canvas.drawBitmap(frame, source, fovDestination, imagePaint)
-        drawHands(canvas, fovDestination, source, links)
+        canvas.drawBitmap(frame, source, destination, imagePaint)
+        drawHands(canvas, destination, source, links)
     }
 
     private fun drawHands(canvas: Canvas, destination: RectF, crop: Rect?, links: List<Pair<Int, Int>>) {
