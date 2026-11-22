@@ -8,6 +8,7 @@
     <application android:allowBackup="false" android:icon="@drawable/ic_vroom" android:roundIcon="@drawable/ic_vroom" android:label="@string/app_name" android:theme="@style/AppTheme">
         <meta-data android:name="com.google.ar.core" android:value="optional" />
         <activity android:name=".SpatialScanActivity" android:screenOrientation="portrait" android:exported="false" />
+        <activity android:name=".VrDisplayActivity" android:screenOrientation="landscape" android:configChanges="orientation|screenSize|keyboardHidden" android:exported="false" />
         <activity android:name=".RoomSetupActivity" android:exported="false" />
         <activity android:name=".HandSetupActivity" android:configChanges="orientation|screenSize|keyboardHidden" android:screenOrientation="unspecified" android:exported="false" />
         <activity android:name=".MainActivity" android:exported="true">

@@ -1,5 +1,6 @@
 using System.Buffers.Binary;
 using System.Drawing;
+using System.Drawing.Imaging;
 using System.Windows.Forms;
 using System.Net;
 using System.Net.Sockets;
@@ -23,6 +24,8 @@ internal static class Program
 
 internal sealed class DashboardForm : Form
 {
+    private readonly UdpClient _driverRelay = new();
+    private readonly UdpClient _handDriverRelay = new();
     private readonly Label _status = MakeValue("Остановлено");
     private readonly Label _head = MakeValue("Нет данных");
     private readonly Label _hands = MakeValue("Нет данных");
@@ -41,13 +44,19 @@ internal sealed class DashboardForm : Form
     private Task? _listener;
     private Task? _cameraListener;
     private TcpListener? _tcpListener;
+    private TcpListener? _displayListener;
+    private Task? _displayTask;
     private long _cameraFrames;
     private PointF[][] _handSkeleton = Array.Empty<PointF[]>();
     private PointF[] _bodySkeleton = Array.Empty<PointF>();
     private readonly Label _body = MakeValue("Нет данных");
     private static readonly (int A, int B)[] HandBones = { (0,1),(1,2),(2,3),(3,4),(0,5),(5,6),(6,7),(7,8),(5,9),(9,10),(10,11),(11,12),(9,13),(13,14),(14,15),(15,16),(13,17),(17,18),(18,19),(19,20),(0,17) };
     private static readonly (int A, int B)[] BodyBones = { (11,12),(11,13),(13,15),(15,17),(15,19),(15,21),(12,14),(14,16),(16,18),(16,20),(16,22),(11,23),(12,24),(23,24),(23,25),(25,27),(27,29),(29,31),(27,31),(24,26),(26,28),(28,30),(30,32),(28,32),(0,1),(1,2),(2,3),(3,7),(0,4),(4,5),(5,6),(6,8),(9,10) };
+    private static readonly (int A, int B)[] MoveNetBones = { (0,1),(0,2),(1,3),(2,4),(5,6),(5,7),(7,9),(6,8),(8,10),(5,11),(6,12),(11,12),(11,13),(13,15),(12,14),(14,16) };
     private readonly PictureBox _pcCamera = new() { Dock = DockStyle.Fill, BackColor = Color.Black, SizeMode = PictureBoxSizeMode.Zoom };
+    private readonly Label _pcPoseStatus = MakeValue("MoveNet не запущен");
+    private PointF[] _pcPoseSkeleton = Array.Empty<PointF>();
+    private float[] _pcPoseConfidence = Array.Empty<float>();
     private readonly ComboBox _pcCameraIndex = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 100 };
     private readonly Button _pcCameraToggle = new() { Text = "Запустить веб-камеру", AutoSize = true };
     private CancellationTokenSource? _pcCameraStop;
@@ -134,7 +143,7 @@ internal sealed class DashboardForm : Form
         _toggle.Font = new Font("Segoe UI", 10, FontStyle.Bold);
         _toggle.Click += async (_, _) => await ToggleListenerAsync();
         actions.Controls.Add(_toggle);
-        actions.Controls.Add(new Label { Text = "Порты: UDP 9000 (датчики) · TCP 9001 (видео камеры)", AutoSize = true, ForeColor = Color.LightSteelBlue, Padding = new Padding(10, 8, 0, 0) });
+        actions.Controls.Add(new Label { Text = "Порты: UDP 9000 · TCP 9001 (камера) · TCP 9002 (экран ПК)", AutoSize = true, ForeColor = Color.LightSteelBlue, Padding = new Padding(10, 8, 0, 0) });
         bottom.Controls.Add(actions, 0, 0);
         bottom.Controls.Add(_log, 0, 1);
         root.Controls.Add(bottom);
@@ -153,40 +162,130 @@ internal sealed class DashboardForm : Form
         header.Controls.Add(_pcCameraIndex);
         _pcCameraToggle.Click += async (_, _) => { if (_pcCameraStop is null) await StartPcCameraAsync(); else await StopPcCameraAsync(); };
         header.Controls.Add(_pcCameraToggle); layout.Controls.Add(header, 0, 0); layout.Controls.Add(_pcCamera, 0, 1);
-        layout.Controls.Add(new Label { Text = "Предпросмотр веб-камеры ПК. Следующий этап подключит оценку позы тела и передачу суставов в VR runtime.", AutoSize = true, ForeColor = Color.LightSteelBlue, Padding = new Padding(0, 8, 0, 0) }, 0, 2);
+        var footer = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, Padding = new Padding(0, 8, 0, 0) };
+        footer.Controls.Add(_pcPoseStatus);
+        footer.Controls.Add(new Label { Text = "MoveNet Lightning · 17 суставов · обработка на ПК", AutoSize = true, ForeColor = Color.LightSteelBlue, Padding = new Padding(12, 4, 0, 0) });
+        layout.Controls.Add(footer, 0, 2);
         page.Controls.Add(layout); return page;
     }
 
     private async Task StartPcCameraAsync()
     {
+        if (_pcCameraStop is not null) return;
+
         var index = Math.Max(0, _pcCameraIndex.SelectedIndex);
-        _pcCameraStop = new CancellationTokenSource();
-        _pcCameraIndex.Enabled = false; _pcCameraToggle.Text = "Остановить веб-камеру";
-        var token = _pcCameraStop.Token;
-        _pcCameraTask = Task.Run(async () =>
+        var stop = new CancellationTokenSource();
+        _pcCameraStop = stop;
+        var token = stop.Token;
+        _pcCameraIndex.Enabled = false;
+        _pcCameraToggle.Enabled = false;
+        _pcCameraToggle.Text = "Загрузка MoveNet…";
+        _pcPoseStatus.Text = "Загрузка модели скелета…";
+
+        try
         {
-            using var capture = new VideoCapture(index, VideoCaptureAPIs.DSHOW);
-            if (!capture.IsOpened()) { UpdateUi(() => { Log("Не удалось открыть веб-камеру " + index); }); return; }
-            capture.Set(VideoCaptureProperties.FrameWidth, 1280); capture.Set(VideoCaptureProperties.FrameHeight, 720);
-            using var frame = new Mat();
-            while (!token.IsCancellationRequested)
+            var estimator = await MoveNetPoseEstimator.CreateAsync(token);
+            token.ThrowIfCancellationRequested();
+            _pcCameraToggle.Enabled = true;
+            _pcCameraToggle.Text = "Остановить веб-камеру";
+            Log("MoveNet Lightning загружен. Запускаю оценку скелета с веб-камеры ПК.");
+
+            _pcCameraTask = Task.Run(async () =>
             {
-                if (!capture.Read(frame) || frame.Empty()) { await Task.Delay(50, token).ConfigureAwait(false); continue; }
-                var bitmap = BitmapConverter.ToBitmap(frame);
-                UpdateUi(() => { var old = _pcCamera.Image; _pcCamera.Image = bitmap; old?.Dispose(); });
-                await Task.Delay(33, token).ConfigureAwait(false);
+                using (estimator)
+                using (var capture = new VideoCapture(index, VideoCaptureAPIs.DSHOW))
+                using (var frame = new Mat())
+                {
+                    if (!capture.IsOpened())
+                        throw new IOException("Не удалось открыть веб-камеру ПК " + index + ".");
+
+                    capture.Set(VideoCaptureProperties.FrameWidth, 1280);
+                    capture.Set(VideoCaptureProperties.FrameHeight, 720);
+                    var frameNumber = 0;
+
+                    while (!token.IsCancellationRequested)
+                    {
+                        if (!capture.Read(frame) || frame.Empty())
+                        {
+                            await Task.Delay(40, token).ConfigureAwait(false);
+                            continue;
+                        }
+
+                        // Pose inference at ~15 FPS; preview remains smooth at camera FPS.
+                        if ((frameNumber++ & 1) == 0)
+                        {
+                            var pose = estimator.Estimate(frame);
+                            var points = pose.IsDetected ? pose.Points : Array.Empty<PointF>();
+                            var confidence = pose.IsDetected ? pose.Confidence : Array.Empty<float>();
+                            UpdateUi(() =>
+                            {
+                                _pcPoseSkeleton = points;
+                                _pcPoseConfidence = confidence;
+                                _pcPoseStatus.Text = pose.IsDetected
+                                    ? $"Скелет ПК активен · 17 суставов · {pose.AverageConfidence:P0}"
+                                    : "Человек не обнаружен";
+                                _body.Text = pose.IsDetected
+                                    ? $"Веб-камера ПК · 17 суставов · {pose.AverageConfidence:P0}"
+                                    : "Тело не обнаружено";
+                                _pcCamera.Invalidate();
+                            });                        }
+
+                        var bitmap = BitmapConverter.ToBitmap(frame);
+                        UpdateUi(() =>
+                        {
+                            var old = _pcCamera.Image;
+                            _pcCamera.Image = bitmap;
+                            old?.Dispose();
+                        });
+                        await Task.Delay(15, token).ConfigureAwait(false);
+                    }
+                }
+            }, token);
+
+            await _pcCameraTask;
+        }
+        catch (OperationCanceledException) when (token.IsCancellationRequested) { }
+        catch (Exception ex)
+        {
+            Log("Ошибка трекинга тела с веб-камеры ПК: " + ex.Message);
+            UpdateUi(() => _pcPoseStatus.Text = "Ошибка: " + ex.Message);
+        }
+        finally
+        {
+            if (ReferenceEquals(_pcCameraStop, stop))
+            {
+                _pcCameraStop = null;
+                _pcCameraTask = null;
+                stop.Dispose();
+                UpdateUi(() =>
+                {
+                    _pcCameraIndex.Enabled = true;
+                    _pcCameraToggle.Enabled = true;
+                    _pcCameraToggle.Text = "Запустить веб-камеру";
+                });
             }
-        }, token);
-        try { await _pcCameraTask; } catch (OperationCanceledException) { } catch (Exception ex) { Log("Ошибка веб-камеры ПК: " + ex.Message); }
-        _pcCameraStop?.Dispose(); _pcCameraStop = null; _pcCameraIndex.Enabled = true; _pcCameraToggle.Text = "Запустить веб-камеру";
+        }
     }
 
     private async Task StopPcCameraAsync()
     {
-        _pcCameraStop?.Cancel();
-        if (_pcCameraTask is not null) { try { await _pcCameraTask; } catch (OperationCanceledException) { } catch (Exception ex) { Log(ex.Message); } }
-        _pcCameraStop?.Dispose(); _pcCameraStop = null; _pcCameraIndex.Enabled = true; _pcCameraToggle.Text = "Запустить веб-камеру";
-        var old = _pcCamera.Image; _pcCamera.Image = null; old?.Dispose();
+        var stop = _pcCameraStop;
+        if (stop is null) return;
+        stop.Cancel();
+        if (_pcCameraTask is not null)
+        {
+            try { await _pcCameraTask; }
+            catch (OperationCanceledException) { }
+            catch (Exception ex) { Log(ex.Message); }
+        }
+        var old = _pcCamera.Image;
+        _pcCamera.Image = null;
+        old?.Dispose();
+        _pcPoseSkeleton = Array.Empty<PointF>();
+        _pcPoseConfidence = Array.Empty<float>();
+        _pcPoseStatus.Text = "MoveNet остановлен";
+        _body.Text = "Нет данных";
+        _pcCamera.Invalidate();
     }
 
     private TabPage BuildSettingsTab()
@@ -277,10 +376,12 @@ internal sealed class DashboardForm : Form
         {
             _stop.Cancel();
             _tcpListener?.Stop();
+            _displayListener?.Stop();
             _toggle.Enabled = false;
             if (_listener is not null) { try { await _listener; } catch { } }
             if (_cameraListener is not null) { try { await _cameraListener; } catch { } }
-            _stop.Dispose(); _stop = null; _listener = null; _cameraListener = null; _tcpListener = null;
+            if (_displayTask is not null) { try { await _displayTask; } catch { } }
+            _stop.Dispose(); _stop = null; _listener = null; _cameraListener = null; _displayTask = null; _tcpListener = null; _displayListener = null;
             _toggle.Enabled = true; _toggle.Text = "Запустить VRoom";
             _status.Text = "Остановлено";
             _cameraStatus.Text = "Ожидание телефона · TCP 9001";
@@ -291,11 +392,14 @@ internal sealed class DashboardForm : Form
         _stop = new CancellationTokenSource();
         _toggle.Text = "Остановить VRoom";
         _status.Text = "Службы запущены";
-        _endpoint.Text = string.Join(", ", GetLocalAddresses()) + " · UDP 9000 · TCP 9001";
+        _endpoint.Text = string.Join(", ", GetLocalAddresses()) + " · UDP 9000 · TCP 9001/9002";
         _listener = ListenTrackingAsync(_stop.Token);
         _tcpListener = new TcpListener(IPAddress.Any, 9001);
         _cameraListener = ListenCameraAsync(_stop.Token);
-        Log("UDP 9000 и TCP 9001 запущены.");
+        _displayListener = new TcpListener(IPAddress.Any, 9002);
+        _displayListener.Start(1);
+        _displayTask = StreamDesktopPreviewAsync(_stop.Token);
+        Log("UDP 9000, TCP 9001 (камера) и TCP 9002 (экран ПК → телефон) запущены.");
     }
 
     private static string[] GetLocalAddresses() =>
@@ -343,6 +447,57 @@ internal sealed class DashboardForm : Form
         catch (Exception ex) { Log("Ошибка видеопотока: " + ex.Message); }
     }
 
+    private async Task StreamDesktopPreviewAsync(CancellationToken token)
+    {
+        var listener = _displayListener!;
+        try
+        {
+            while (!token.IsCancellationRequested)
+            {
+                using var phone = await listener.AcceptTcpClientAsync(token);
+                phone.NoDelay = true;
+                Log("Подключён VR-экран телефона: " + phone.Client.RemoteEndPoint);
+                try                {
+                    using var phoneStream = phone.GetStream();
+                    using var driver = new TcpClient();
+                    while (!token.IsCancellationRequested)
+                    {
+                        try
+                        {
+                            await driver.ConnectAsync(IPAddress.Loopback, 9004, token);
+                            break;
+                        }
+                        catch (SocketException)
+                        {
+                            await Task.Delay(1000, token);
+                        }
+                    }
+                    driver.NoDelay = true;
+                    Log("Получен канал кадров SteamVR OpenVR: 127.0.0.1:9004");
+                    using var driverStream = driver.GetStream();
+                    while (!token.IsCancellationRequested)
+                    {
+                        var header = new byte[4];
+                        if (!await ReadExactlyAsync(driverStream, header, token)) break;
+                        var length = BinaryPrimitives.ReadInt32BigEndian(header);
+                        if (length is < 4 or > 4_000_000)
+                            throw new InvalidDataException("OpenVR передал кадр недопустимого размера");
+                        var frame = new byte[length];
+                        if (!await ReadExactlyAsync(driverStream, frame, token)) break;
+                        await phoneStream.WriteAsync(header, token);
+                        await phoneStream.WriteAsync(frame, token);
+                    }
+                }
+                catch (IOException ex) { Log("VR-экран отключился: " + ex.Message); }
+                catch (SocketException ex) when (!token.IsCancellationRequested) { Log("Канал SteamVR: " + ex.Message); }
+            }
+        }
+        catch (OperationCanceledException) when (token.IsCancellationRequested) { }
+        catch (SocketException) when (token.IsCancellationRequested) { }
+        catch (ObjectDisposedException) when (token.IsCancellationRequested) { }
+        catch (Exception ex) { Log("Ошибка передачи OpenVR-кадров: " + ex.Message); }
+    }
+
     private static async Task<bool> ReadExactlyAsync(NetworkStream stream, byte[] buffer, CancellationToken token)
     {
         var offset = 0;
@@ -379,23 +534,14 @@ internal sealed class DashboardForm : Form
                             if (pose.Length() is < 0.5f or > 1.5f) throw new InvalidDataException("Некорректная длина quaternion");
                             pose = Quaternion.Normalize(pose);
                             UpdateUi(() => _head.Text = $"x {pose.X:F2} · y {pose.Y:F2} · z {pose.Z:F2} · w {pose.W:F2}");
+                            // Relay the validated phone IMU packet to the SteamVR driver process.
+                            _ = _driverRelay.SendAsync(packet.Buffer, packet.Buffer.Length, new IPEndPoint(IPAddress.Loopback, 9003));
                             break;
                         }
                         case ("body_pose", 1):
                         {
-                            var points = root.GetProperty("landmarks");
-                            if (points.ValueKind != JsonValueKind.Array || (points.GetArrayLength() != 0 && points.GetArrayLength() != 33))
-                                throw new InvalidDataException("Ожидалось 33 точки тела или пустой список");
-                            var body = new PointF[points.GetArrayLength()];
-                            var index = 0;
-                            foreach (var point in points.EnumerateArray())
-                            {
-                                var x = Finite(point, "x"); var y = Finite(point, "y"); _ = Finite(point, "z");
-                                if (x is < 0f or > 1f || y is < 0f or > 1f) throw new InvalidDataException("Координаты тела должны быть в [0,1]");
-                                body[index++] = new PointF(x, y);
-                            }
-                            var snapshot = body;
-                            UpdateUi(() => { _bodySkeleton = snapshot; _body.Text = snapshot.Length == 0 ? "Тело не обнаружено" : "33 точки · скелет активен"; _camera.Invalidate(); });
+                            // Full-body pose is intentionally sourced from the Windows webcam.
+                            // Phone camera remains available for hand tracking only.
                             break;
                         }
                         case ("hand_pose", 1):
@@ -406,6 +552,8 @@ internal sealed class DashboardForm : Form
                             if (handCount > 2) throw new InvalidDataException("Некорректный список рук");
                             var descriptions = new List<string>();
                             var skeletons = new List<PointF[]>();
+                            var leftPinch = -1f;
+                            var rightPinch = -1f;
                             foreach (var hand in array.EnumerateArray())
                             {
                                 var label = RequiredString(hand, "handedness");
@@ -413,6 +561,15 @@ internal sealed class DashboardForm : Form
                                 var points = hand.GetProperty("landmarks");
                                 if (points.ValueKind != JsonValueKind.Array || points.GetArrayLength() != 21) throw new InvalidDataException("Ожидалось 21 точка на руку");
                                 var wrist = points[0];
+                                var thumbTip = points[4];
+                                var indexTip = points[8];
+                                var pinchDx = Finite(thumbTip, "x") - Finite(indexTip, "x");
+                                var pinchDy = Finite(thumbTip, "y") - Finite(indexTip, "y");
+                                var pinchDistance = MathF.Sqrt(pinchDx * pinchDx + pinchDy * pinchDy);
+                                // A close thumb/index pair is exposed as an analog trigger.
+                                // This is 2D gesture input only; it is not a tracked 3D controller pose.
+                                var pinch = Math.Clamp((0.22f - pinchDistance) / 0.17f, 0f, 1f);
+                                if (label == "Left") leftPinch = pinch; else rightPinch = pinch;
                                 var skeleton = new PointF[21];
                                 var pointIndex = 0;
                                 descriptions.Add($"{label}: запястье ({Finite(wrist, "x"):F2}, {Finite(wrist, "y"):F2}, {Finite(wrist, "z"):F2})");
@@ -421,6 +578,9 @@ internal sealed class DashboardForm : Form
                             }
                             var handsText = handCount == 0 ? "Руки не обнаружены" : string.Join(" | ", descriptions);
                             var skeletonSnapshot = skeletons.ToArray();
+                            var controllerInput = JsonSerializer.SerializeToUtf8Bytes(new { left = leftPinch, right = rightPinch });
+                            _ = _handDriverRelay.SendAsync(controllerInput, controllerInput.Length,
+                                new IPEndPoint(IPAddress.Loopback, 9005));
                             UpdateUi(() => { _hands.Text = handsText; _handSkeleton = skeletonSnapshot; _camera.Invalidate(); });
                             break;
                         }
@@ -465,6 +625,41 @@ internal sealed class DashboardForm : Form
         }
     }
 
+    private void DrawPcPoseSkeleton(object? sender, PaintEventArgs e)
+    {
+        var frame = _pcCamera.Image;
+        if (frame is null || _pcPoseSkeleton.Length != 17 || _pcPoseConfidence.Length != 17) return;
+
+        var scale = Math.Min(_pcCamera.ClientSize.Width / (float)frame.Width, _pcCamera.ClientSize.Height / (float)frame.Height);
+        var drawWidth = frame.Width * scale;
+        var drawHeight = frame.Height * scale;
+        var offsetX = (_pcCamera.ClientSize.Width - drawWidth) / 2f;
+        var offsetY = (_pcCamera.ClientSize.Height - drawHeight) / 2f;
+        PointF Map(PointF p) => new(offsetX + p.X * drawWidth, offsetY + p.Y * drawHeight);
+
+        e.Graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+        using var bonePen = new Pen(Color.FromArgb(235, 255, 190, 70), Math.Max(2f, scale * 4f))
+        {
+            StartCap = System.Drawing.Drawing2D.LineCap.Round,
+            EndCap = System.Drawing.Drawing2D.LineCap.Round
+        };
+        using var jointBrush = new SolidBrush(Color.White);
+
+        foreach (var (a, b) in MoveNetBones)
+        {
+            if (_pcPoseConfidence[a] < 0.20f || _pcPoseConfidence[b] < 0.20f) continue;
+            e.Graphics.DrawLine(bonePen, Map(_pcPoseSkeleton[a]), Map(_pcPoseSkeleton[b]));
+        }
+
+        for (var i = 0; i < _pcPoseSkeleton.Length; i++)
+        {
+            if (_pcPoseConfidence[i] < 0.20f) continue;
+            var point = Map(_pcPoseSkeleton[i]);
+            var radius = Math.Max(2.5f, scale * 4f);
+            e.Graphics.FillEllipse(jointBrush, point.X - radius, point.Y - radius, radius * 2, radius * 2);
+        }
+    }
+
     private static string RequiredString(JsonElement element, string key) =>
         element.GetProperty(key).GetString() ?? throw new InvalidDataException($"{key} пуст");
     private static float Finite(JsonElement element, string key)
@@ -495,6 +690,8 @@ internal sealed class DashboardForm : Form
         _pcCameraStop?.Cancel();
         _camera.Image?.Dispose();
         _pcCamera.Image?.Dispose();
+        _driverRelay.Dispose();
+        _handDriverRelay.Dispose();
         base.OnFormClosing(e);
     }
 }

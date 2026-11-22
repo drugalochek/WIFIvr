@@ -146,6 +146,17 @@ class MainActivity : Activity(), SensorEventListener {
             background = rounded(Color.rgb(48, 67, 99), 16)
             setOnClickListener { startActivity(Intent(this@MainActivity, RoomSetupActivity::class.java)) }
         }
+        val displayButton = Button(this).apply {
+            text = "Тестовый экран ПК (моно)"
+            isAllCaps = false
+            textSize = 15f
+            setTextColor(Color.WHITE)
+            background = rounded(Color.rgb(48, 67, 99), 16)
+            setOnClickListener {
+                startActivity(Intent(this@MainActivity, VrDisplayActivity::class.java)
+                    .putExtra("pc_address", addressInput.text.toString().trim()))
+            }
+        }
 
         root.addView(brand, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
         root.addView(tagline, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { bottomMargin = dp(30) })
@@ -157,6 +168,7 @@ class MainActivity : Activity(), SensorEventListener {
         panel.addView(status)
         root.addView(handsButton, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(54)).apply { topMargin = dp(16) })
         root.addView(roomButton, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(54)).apply { topMargin = dp(10) })
+        root.addView(displayButton, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(54)).apply { topMargin = dp(10) })
         setContentView(root)
     }
 

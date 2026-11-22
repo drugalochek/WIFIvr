@@ -2,7 +2,7 @@ name: Build VRoom
 
 on:
   push:
-    branches: [main]
+    branches: [main, 'feature/**']
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -61,7 +61,6 @@ jobs:
         run: |
           mkdir -p Android/app/src/main/assets
           curl --fail --location --retry 3 https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task --output Android/app/src/main/assets/hand_landmarker.task
-          curl --fail --location --retry 3 https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task --output Android/app/src/main/assets/pose_landmarker_lite.task
       - name: Build VRoom APK
         working-directory: Android
         run: gradle :app:assembleDebug
@@ -70,5 +69,39 @@ jobs:
         with:
           name: VRoom-Android-debug
           path: Android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 14
+
+  build-openvr-driver:
+    name: Build SteamVR OpenVR driver
+    runs-on: windows-latest
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v6
+      - name: Install CMake
+        uses: lukka/get-cmake@latest
+      - name: Fetch OpenVR SDK headers
+        shell: pwsh
+        run: git clone --depth 1 https://github.com/ValveSoftware/openvr.git "$env:RUNNER_TEMP/openvr"
+      - name: Configure OpenVR driver
+        shell: pwsh
+        run: cmake -S SteamVRDriver -B SteamVRDriver/build -A x64 -DOPENVR_INCLUDE_DIR="$env:RUNNER_TEMP/openvr/headers"
+      - name: Compile OpenVR driver
+        run: cmake --build SteamVRDriver/build --config Release
+      - name: Package SteamVR driver
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force artifacts/driver_vroom/bin/win64 | Out-Null
+          New-Item -ItemType Directory -Force artifacts/driver_vroom/resources/settings | Out-Null
+          New-Item -ItemType Directory -Force artifacts/driver_vroom/resources/input | Out-Null
+          Copy-Item SteamVRDriver/build/Release/driver_vroom.dll artifacts/driver_vroom/bin/win64/
+          Copy-Item SteamVRDriver/driver.vrdrivermanifest artifacts/driver_vroom/
+          Copy-Item SteamVRDriver/resources/settings/default.vrsettings artifacts/driver_vroom/resources/settings/
+          Copy-Item SteamVRDriver/resources/input/vroom_controller_profile.json artifacts/driver_vroom/resources/input/
+      - name: Upload SteamVR driver
+        uses: actions/upload-artifact@v4
+        with:
+          name: VRoom-SteamVR-driver
+          path: artifacts/driver_vroom/
           if-no-files-found: error
           retention-days: 14

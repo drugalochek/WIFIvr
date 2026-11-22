@@ -1,0 +1,22 @@
+{
+  "jsonid": "input_profile",
+  "controller_type": "vroom_controller",
+  "input_bindingui_mode": "controller_handed",
+  "input_source": {
+    "/input/trigger": {
+      "type": "trigger",
+      "binding_image_point": [220, 70],
+      "order": 1
+    },
+    "/input/grip": {
+      "type": "trigger",
+      "binding_image_point": [150, 70],
+      "order": 2
+    },
+    "/output/haptic": {
+      "type": "vibration",
+      "binding_image_point": [260, 150],
+      "order": 3
+    }
+  }
+}
