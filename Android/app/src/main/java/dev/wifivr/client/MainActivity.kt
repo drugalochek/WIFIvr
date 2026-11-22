@@ -1,12 +1,16 @@
 package dev.wifivr.client
 
 import android.app.Activity
+import android.graphics.Color
+import android.graphics.Typeface
+import android.graphics.drawable.GradientDrawable
 import android.hardware.Sensor
 import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.hardware.SensorManager
 import android.os.Bundle
 import android.view.Gravity
+import android.view.View
 import android.view.ViewGroup
 import android.widget.Button
 import android.widget.EditText
@@ -37,58 +41,122 @@ class MainActivity : Activity(), SensorEventListener {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        window.statusBarColor = Color.rgb(11, 16, 32)
+        window.navigationBarColor = Color.rgb(11, 16, 32)
+        window.decorView.systemUiVisibility = 0
         sensors = getSystemService(SENSOR_SERVICE) as SensorManager
         rotationSensor = sensors.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR)
         buildUi()
-        status.text = if (rotationSensor == null) {
-            "This phone has no rotation-vector sensor."
-        } else {
-            "Ready. Enter the PC's local IP address."
-        }
+        status.text = getString(if (rotationSensor == null) R.string.no_rotation_sensor else R.string.ready_to_connect)
         connectButton.isEnabled = rotationSensor != null
     }
+
+    private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
+
+    private fun rounded(color: Int, radius: Int): GradientDrawable =
+        GradientDrawable().apply { setColor(color); cornerRadius = dp(radius).toFloat() }
 
     private fun buildUi() {
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
-            setPadding(32, 32, 32, 32)
+            setPadding(dp(24), dp(28), dp(24), dp(24))
+            background = GradientDrawable(
+                GradientDrawable.Orientation.TOP_BOTTOM,
+                intArrayOf(Color.rgb(11, 16, 32), Color.rgb(20, 29, 51), Color.rgb(12, 20, 36))
+            )
         }
-        val title = TextView(this).apply {
-            text = "WiFiVR"
-            textSize = 30f
+
+        val brand = TextView(this).apply {
+            text = getString(R.string.app_name)
+            textSize = 34f
+            setTextColor(Color.WHITE)
+            typeface = Typeface.create("sans-serif", Typeface.BOLD)
+            gravity = Gravity.CENTER
+        }
+        val tagline = TextView(this).apply {
+            text = getString(R.string.tagline)
+            textSize = 14f
+            setTextColor(Color.rgb(159, 177, 205))
+            gravity = Gravity.CENTER
+        }
+        val panel = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(20), dp(22), dp(20), dp(20))
+            background = rounded(Color.rgb(27, 39, 64), 24)
+            elevation = dp(8).toFloat()
+        }
+        val sectionTitle = TextView(this).apply {
+            text = getString(R.string.connection_title)
+            textSize = 20f
+            setTextColor(Color.WHITE)
+            typeface = Typeface.DEFAULT_BOLD
+        }
+        val sectionHint = TextView(this).apply {
+            text = getString(R.string.connection_hint)
+            textSize = 13f
+            setTextColor(Color.rgb(165, 181, 205))
+            setPadding(0, dp(6), 0, dp(16))
         }
         addressInput = EditText(this).apply {
-            hint = "PC address, e.g. 192.168.1.10"
+            hint = getString(R.string.pc_address_hint)
             setSingleLine(true)
             setText("192.168.1.100")
+            textSize = 16f
+            setTextColor(Color.WHITE)
+            setHintTextColor(Color.rgb(140, 157, 183))
+            setPadding(dp(14), dp(12), dp(14), dp(12))
+            background = rounded(Color.rgb(17, 27, 47), 14)
+            inputType = android.text.InputType.TYPE_CLASS_TEXT
         }
         connectButton = Button(this).apply {
-            text = "Connect"
+            text = getString(R.string.connect)
+            isAllCaps = false
+            textSize = 16f
+            typeface = Typeface.DEFAULT_BOLD
+            setTextColor(Color.rgb(8, 28, 28))
+            background = rounded(Color.rgb(73, 226, 178), 16)
+            setPadding(dp(12), dp(8), dp(12), dp(8))
             setOnClickListener { if (running) stopStreaming() else startStreaming() }
         }
-        status = TextView(this).apply { textSize = 16f }
-        root.addView(title)
-        root.addView(addressInput, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
-        ))
-        root.addView(connectButton)
-        root.addView(Button(this).apply { text = "Проверка рук и камеры"; setOnClickListener { startActivity(Intent(this@MainActivity, HandSetupActivity::class.java)) } })
-        root.addView(status)
+        status = TextView(this).apply {
+            textSize = 14f
+            setTextColor(Color.rgb(177, 197, 219))
+            gravity = Gravity.CENTER
+            setPadding(dp(8), dp(14), dp(8), dp(4))
+        }
+        val handsButton = Button(this).apply {
+            text = getString(R.string.hand_tracking)
+            isAllCaps = false
+            textSize = 15f
+            setTextColor(Color.WHITE)
+            background = rounded(Color.rgb(48, 67, 99), 16)
+            setOnClickListener { startActivity(Intent(this@MainActivity, HandSetupActivity::class.java)) }
+        }
+
+        root.addView(brand, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+        root.addView(tagline, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { bottomMargin = dp(30) })
+        root.addView(panel, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+        panel.addView(sectionTitle)
+        panel.addView(sectionHint)
+        panel.addView(addressInput, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(54)))
+        panel.addView(connectButton, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(54)).apply { topMargin = dp(14) })
+        panel.addView(status)
+        root.addView(handsButton, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(54)).apply { topMargin = dp(16) })
         setContentView(root)
     }
 
     private fun startStreaming() {
         val host = addressInput.text.toString().trim()
         val resolved = try { InetAddress.getByName(host) } catch (_: Exception) {
-            status.text = "Invalid PC address."
+            status.text = getString(R.string.invalid_pc_address)
             return
         }
         destination = resolved
         try {
             socket = DatagramSocket()
         } catch (e: Exception) {
-            status.text = "Could not open UDP socket: ${e.message}"
+            status.text = getString(R.string.socket_error, e.message ?: "")
             return
         }
         running = true
@@ -111,14 +179,12 @@ class MainActivity : Activity(), SensorEventListener {
                     .toString()
                 val bytes = json.toByteArray(Charsets.UTF_8)
                 socket?.send(DatagramPacket(bytes, bytes.size, target, 9000))
-            } catch (_: Exception) {
-                // A transient Wi-Fi send failure should not kill the sensor callback.
-            }
+            } catch (_: Exception) { }
         }, 0, 16, TimeUnit.MILLISECONDS)
         rotationSensor?.let { sensors.registerListener(this, it, SensorManager.SENSOR_DELAY_GAME) }
         addressInput.isEnabled = false
-        connectButton.text = "Disconnect"
-        status.text = "Streaming head orientation to $host:9000"
+        connectButton.text = getString(R.string.disconnect)
+        status.text = getString(R.string.streaming_to, host)
     }
 
     private fun stopStreaming() {
@@ -130,15 +196,14 @@ class MainActivity : Activity(), SensorEventListener {
         socket = null
         destination = null
         addressInput.isEnabled = true
-        connectButton.text = "Connect"
-        status.text = "Disconnected."
+        connectButton.text = getString(R.string.connect)
+        status.text = getString(R.string.disconnected)
     }
 
     override fun onSensorChanged(event: SensorEvent) {
         if (!running || event.sensor.type != Sensor.TYPE_ROTATION_VECTOR) return
         val quaternion = FloatArray(4)
         SensorManager.getQuaternionFromVector(quaternion, event.values)
-        // Android returns [w, x, y, z]; protocol uses [x, y, z, w].
         latestPose.set(floatArrayOf(quaternion[1], quaternion[2], quaternion[3], quaternion[0]))
     }
 
