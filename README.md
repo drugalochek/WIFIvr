@@ -2,70 +2,77 @@
 
 **VRoom** turns an Android phone into the tracking and display client for a Windows PC VR system.
 
-## Current status
+## Current implementation
 
-- Android app identity and project display name: VRoom.
 - Android reads the phone rotation vector and sends head orientation over UDP.
 - MediaPipe detects up to two hands locally on the phone and sends 21 landmarks per hand to the PC.
-- Windows runs MoveNet Lightning locally on the selected PC webcam and detects 17 full-body keypoints; the phone camera is no longer used for body-pose inference.
-- Windows has a desktop dashboard for receiving head/hand telemetry.
+- Windows runs MoveNet Lightning locally on the selected PC webcam and detects 17 full-body keypoints.
+- Windows has a desktop dashboard for receiving head/hand telemetry and visualizing the PC-webcam skeleton.
 - Android sends a throttled JPEG camera preview to Windows over TCP port 9001.
-- Windows displays the incoming phone camera stream alongside tracking telemetry.
+- The SteamVR OpenVR driver registers a virtual HMD and a separate display-redirect device.
+- The display-redirect path captures the SteamVR compositor texture, reads it back through D3D11, JPEG-encodes it, and sends it to the Windows host over loopback TCP 9004.
+- The Windows host relays those frames over TCP 9002 to Android. The Android VR display crops the side-by-side frame into left/right eye images.
 
-**Important:** the current OpenVR driver is an initial virtual-HMD integration, not a finished headset. It registers an HMD and forwards phone IMU orientation through the Windows host. Its virtual-display callback does not yet forward compositor frames to the phone. The TCP 9002 path is currently a 15 FPS primary-desktop JPEG test; Android duplicates the same monoscopic frame into both eye panels. This is not true stereo game streaming. Controller registration, calibrated hand poses, 6DoF position, and OpenXR support remain future work.
+**Validation status:** the end-to-end stereo transport is implemented in code, but still requires testing on the target PC, SteamVR runtime, Android phone, and headset optics. The current GPU readback plus JPEG path is a functional transport baseline, not a low-latency video solution. Do not assume a stable refresh rate or acceptable motion-to-photon latency until measured on hardware.
+
+## What is not implemented yet
+
+- Two tracked OpenVR hand-controller devices with calibrated poses and working input components.
+- Calibrated 3D body/hand tracking. MoveNet output from one PC webcam is 2D image-space keypoints only.
+- Reliable 6DoF head position. The phone IMU supplies orientation, not absolute position.
+- Working arm-swing or walk-in-place locomotion injected into SteamVR.
+- A spatial VR overlay that can interact with the Windows desktop.
+- OpenXR support.
+- Validated compatibility with individual SteamVR games.
+
+The current system is an early OpenVR integration, not a finished or universally compatible VR headset. Roblox and other games only work when their own VR support permits it.
 
 ## Tracking protocol
 
-The Windows app receives UDP telemetry on port 9000 and a length-prefixed JPEG camera stream over TCP port 9001:
-- `head_pose` v1 — normalized device orientation quaternion.
-- `hand_pose` v1 — up to two hands, each with 21 image-space landmarks.
-- TCP 9001 — JPEG camera frames, each prefixed by a 4-byte big-endian frame length. The current Android preview sender targets up to 10 FPS.
-- TCP 9002 — primary Windows desktop JPEG preview at approximately 15 FPS, 1280×720. Android shows the same image in both eye panels for transport testing only.
+The Windows host receives UDP telemetry on port 9000 and length-prefixed JPEG streams over TCP:
 
-The phone clamps x/y image coordinates to [0, 1]. Landmark z is relative model depth and may be negative. The receiver stores/display the latest telemetry; it does not infer room-space controller poses from 2D camera landmarks.
+- `head_pose` v1 — normalized device orientation quaternion, relayed to the SteamVR driver through UDP 9003.
+- `hand_pose` v1 — up to two hands, each with 21 image-space landmarks.
+- TCP 9001 — JPEG camera frames from the Android phone, each prefixed by a 4-byte big-endian frame length.
+- TCP 9002 — side-by-side SteamVR compositor frames relayed from the Windows host to Android.
+- TCP 9004 — local loopback stream from the OpenVR driver's compositor-frame capture to the Windows host.
+
+The phone clamps normalized hand x/y coordinates to [0, 1]. Landmark z is relative model depth and may be negative. The receiver currently visualizes hand landmarks; it does not infer room-space controller poses from them.
 
 ## Run
 
 1. Connect the phone and PC to the same trusted Wi-Fi network.
-2. Start **VRoom.exe** on Windows and press **Запустить приёмник**.
+2. Start **VRoom.exe** on Windows and press **Запустить VRoom**.
 3. Copy one of the PC's local IPv4 addresses shown in the network card.
 4. Enter that address in VRoom on Android and connect.
-5. Allow VRoom through Windows Firewall on private networks only.
+5. Start the Android VR display activity when testing the PC-to-phone display path.
+6. Allow VRoom through Windows Firewall on private networks only.
 
-The Windows host listens on UDP 9000, TCP 9001 (phone camera upload), and TCP 9002 (monoscopic desktop preview download). Start VRoom Desktop before connecting the phone. Allow these ports through Windows Firewall on private networks only. Do not expose them to the public internet.
+The Windows host listens on UDP 9000, TCP 9001 (phone camera upload), and TCP 9002 (VR display download). The SteamVR driver separately listens on loopback UDP 9003 for head pose and loopback TCP 9004 for compositor-frame relay. Start VRoom Desktop before connecting the phone. Do not expose these ports to the public internet.
 
 ## Builds
 
 GitHub Actions publishes:
 - `VRoom-Windows-x64` — self-contained Windows desktop application.
 - `VRoom-Android-debug` — Android debug APK.
+- `VRoom-SteamVR-driver` — SteamVR OpenVR driver package.
 
-Open the repository's Actions tab, select the latest successful **Build VRoom** run, and download the corresponding artifact.
+Open the repository's Actions tab, select the latest successful **Build VRoom** run, and download the corresponding artifacts.
 
 ## Project layout
 
-- `Android/` — Android phone client (IMU, camera hand tracking, network telemetry).
+- `Android/` — Android phone client (IMU, camera hand tracking, network telemetry, VR display).
 - `Windows/` — Windows desktop host and tracking dashboard.
-- `Protocol/` — versioned network message schemas.
-- `docs/ROADMAP.md` — implementation milestones.
+- `SteamVRDriver/` — OpenVR HMD and display-redirect driver.
+- `docs/ROADMAP.md` — implementation milestones and remaining work.
+- `docs/TEST_PLAN.md` — staged hardware validation checklist.
 
-## Next engineering milestones
+## Windows desktop features
 
-1. Build and validate a SteamVR/OpenVR driver registering one HMD and two controllers.
-2. Map head orientation and calibrated hand tracking into runtime device poses and inputs.
-3. Capture PC game frames and stream a low-latency stereo video feed to Android.
-4. Add lens calibration, stereo geometry, timing and latency measurements.
+The desktop application has tabs for the phone camera stream, PC webcam body tracking, and VR/motion profile settings. The PC webcam tab runs MoveNet SinglePose Lightning through ONNX Runtime, draws the 17 detected body keypoints over the webcam preview, and reports detection confidence. The model is downloaded on first use to `%LOCALAPPDATA%\\VRoom\\models` and checked against its SHA-256 digest.
 
+Overlay placement, scale, distance, locomotion mode, sensitivity, and smoothing values can be saved to `%LOCALAPPDATA%\\VRoom\\settings.json`. These are configuration profiles only; they do not yet control an in-game overlay or locomotion engine.
 
-## VRoom Desktop features
-
-The Windows desktop application has tabs for the phone camera stream, PC webcam body tracking, and VR/motion profile settings. The PC webcam tab runs MoveNet SinglePose Lightning through ONNX Runtime, draws the 17 detected body keypoints over the webcam preview, and reports detection confidence. The model is downloaded on first use to `%LOCALAPPDATA%\\VRoom\\models` and checked against its SHA-256 digest. Full-body pose is currently visualized in the Windows app only; calibrated room-space skeleton tracking and locomotion injection into SteamVR are not implemented yet.
-
-Overlay placement, scale, distance, locomotion mode, sensitivity, and smoothing values can be saved to `%LOCALAPPDATA%\\VRoom\\settings.json`. These are configuration profiles for the upcoming spatial overlay and motion engine, not active in-game controls until the VR runtime is connected.
-
-The Android camera uplink reconnects to TCP port 9001 when VRoom Desktop becomes available again.
-
-
-## Skeleton tracking
+## Tracking limitations
 
 Android runs MediaPipe Hand Landmarker on the phone camera and sends 21 landmarks per detected hand over UDP 9000. Full-body pose inference is performed on the Windows PC from its selected webcam using MoveNet Lightning (17 keypoints). The PC webcam skeleton is a 2D image-space visualization, not calibrated 3D room tracking. Phone camera remains available for hand tracking and video preview.
