@@ -271,8 +271,8 @@ public:
             vr::VRServerDriverHost()->TrackedDevicePoseUpdated(
                 hmd_->ObjectId(), pose, sizeof(vr::DriverPose_t));
         }
-        if (leftController_) leftController_->RunFrame();
-        if (rightController_) rightController_->RunFrame();
+        if (leftController_) leftController_->RunFrame(pose);
+        if (rightController_) rightController_->RunFrame(pose);
     }
     bool ShouldBlockStandbyMode() override { return false; }
     void EnterStandby() override {}
@@ -480,6 +480,8 @@ private:
         static const std::regex sidePattern(R"rx("handedness"\s*:\s*"(Left|Right)")rx");
         static const std::regex confidencePattern(R"rx("confidence"\s*:\s*([-+0-9.eE]+))rx");
         static const std::regex worldPattern(R"rx("worldLandmarks"\s*:\s*\[([\s\S]*?)\])rx");
+        static const std::regex rootPattern(
+            R"rx("rootPosition"\s*:\s*\{\s*"x"\s*:\s*([-+0-9.eE]+)\s*,\s*"y"\s*:\s*([-+0-9.eE]+)\s*,\s*"z"\s*:\s*([-+0-9.eE]+)\s*\})rx");
         static const std::regex pointPattern(
             R"rx(\{\s*"x"\s*:\s*([-+0-9.eE]+)\s*,\s*"y"\s*:\s*([-+0-9.eE]+)\s*,\s*"z"\s*:\s*([-+0-9.eE]+)\s*\})rx");
         char buffer[16384];
@@ -502,9 +504,10 @@ private:
                     auto* controller = side == "Left" ? leftController_.get() : rightController_.get();
                     if (!controller) continue;
 
-                    std::smatch confidenceMatch, worldMatch;
+                    std::smatch confidenceMatch, worldMatch, rootMatch;
                     if (!std::regex_search(object, confidenceMatch, confidencePattern) ||
-                        !std::regex_search(object, worldMatch, worldPattern)) {
+                        !std::regex_search(object, worldMatch, worldPattern) ||
+                        !std::regex_search(object, rootMatch, rootPattern)) {
                         controller->ClearSkeleton();
                         if (side == "Left") seenLeft = true; else seenRight = true;
                         continue;
@@ -527,8 +530,14 @@ private:
                         };
                         ++pointCount;
                     }
-                    if (pointCount == points.size()) controller->SetHandPose(points, confidence);
-                    else controller->ClearSkeleton();
+                    if (pointCount == points.size()) {
+                        const std::array<float, 3> rootPositionHead{
+                            std::stof(rootMatch[1].str()),
+                            std::stof(rootMatch[2].str()),
+                            std::stof(rootMatch[3].str())
+                        };
+                        controller->SetHandPose(points, confidence, rootPositionHead);
+                    } else controller->ClearSkeleton();
                     if (side == "Left") seenLeft = true; else seenRight = true;
                 }
                 if (!seenLeft && leftController_) leftController_->ClearSkeleton();
