@@ -138,7 +138,7 @@ internal sealed class DashboardForm : Form
         _toggle.Font = new Font("Segoe UI", 10, FontStyle.Bold);
         _toggle.Click += async (_, _) => await ToggleListenerAsync();
         actions.Controls.Add(_toggle);
-        actions.Controls.Add(new Label { Text = "Порты: UDP 9000 (датчики) · TCP 9001 (видео камеры)", AutoSize = true, ForeColor = Color.LightSteelBlue, Padding = new Padding(10, 8, 0, 0) });
+        actions.Controls.Add(new Label { Text = "Порты: UDP 9000 · TCP 9001 (камера) · TCP 9002 (экран ПК)", AutoSize = true, ForeColor = Color.LightSteelBlue, Padding = new Padding(10, 8, 0, 0) });
         bottom.Controls.Add(actions, 0, 0);
         bottom.Controls.Add(_log, 0, 1);
         root.Controls.Add(bottom);
