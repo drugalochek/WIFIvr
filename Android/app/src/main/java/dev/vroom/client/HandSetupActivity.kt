@@ -228,7 +228,7 @@ class HandSetupActivity : ComponentActivity() {
                     viewFovDegrees = 60 + progress
                     getSharedPreferences("vroom_settings", MODE_PRIVATE).edit().putInt("fov_degrees", viewFovDegrees).apply()
                     fovLabel.text = "FOV: $viewFovDegrees°"
-                    overlay.setFovDegrees(viewFovDegrees)
+                    overlay.fovDegrees = viewFovDegrees
                 }
                 override fun onStartTrackingTouch(seekBar: SeekBar?) = Unit
                 override fun onStopTrackingTouch(seekBar: SeekBar?) = Unit
