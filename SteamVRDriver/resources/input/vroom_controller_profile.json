@@ -1,22 +1,28 @@
 {
   "jsonid": "input_profile",
-  "controller_type": "vroom_controller",
+  "controller_type": "vroom_hand",
   "input_bindingui_mode": "controller_handed",
+  "remapping": "vroom_controller_remapping.json",
   "input_source": {
-    "/input/trigger": {
-      "type": "trigger",
-      "binding_image_point": [220, 70],
+    "/input/skeleton/left": {
+      "type": "skeleton",
       "order": 1
     },
-    "/input/grip": {
-      "type": "trigger",
-      "binding_image_point": [150, 70],
+    "/input/skeleton/right": {
+      "type": "skeleton",
       "order": 2
     },
-    "/output/haptic": {
-      "type": "vibration",
-      "binding_image_point": [260, 150],
+    "/input/trigger": {
+      "type": "trigger",
+      "click": true,
+      "value": true,
       "order": 3
+    },
+    "/input/squeeze": {
+      "type": "trigger",
+      "click": true,
+      "value": true,
+      "order": 4
     }
   }
 }

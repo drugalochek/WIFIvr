@@ -475,6 +475,7 @@ internal sealed class DashboardForm : Form
                     driver.NoDelay = true;
                     Log("Получен канал кадров SteamVR OpenVR: 127.0.0.1:9004");
                     using var driverStream = driver.GetStream();
+                    var firstFrameLogged = false;
                     while (!token.IsCancellationRequested)
                     {
                         var header = new byte[4];
@@ -484,6 +485,11 @@ internal sealed class DashboardForm : Form
                             throw new InvalidDataException("OpenVR передал кадр недопустимого размера");
                         var frame = new byte[length];
                         if (!await ReadExactlyAsync(driverStream, frame, token)) break;
+                        if (!firstFrameLogged)
+                        {
+                            firstFrameLogged = true;
+                            Log($"Первый кадр SteamVR получен и отправляется на телефон ({length} байт).");
+                        }
                         await phoneStream.WriteAsync(header, token);
                         await phoneStream.WriteAsync(frame, token);
                     }
@@ -545,6 +551,7 @@ internal sealed class DashboardForm : Form
                             break;
                         }
                         case ("hand_pose", 1):
+                        case ("hand_pose", 2):
                         {
                             var array = root.GetProperty("hands");
                             if (array.ValueKind != JsonValueKind.Array) throw new InvalidDataException("Некорректный список рук");
@@ -552,34 +559,55 @@ internal sealed class DashboardForm : Form
                             if (handCount > 2) throw new InvalidDataException("Некорректный список рук");
                             var descriptions = new List<string>();
                             var skeletons = new List<PointF[]>();
-                            var leftPinch = -1f;
-                            var rightPinch = -1f;
                             foreach (var hand in array.EnumerateArray())
                             {
                                 var label = RequiredString(hand, "handedness");
                                 if (label is not ("Left" or "Right")) throw new InvalidDataException("Неизвестная рука");
                                 var points = hand.GetProperty("landmarks");
-                                if (points.ValueKind != JsonValueKind.Array || points.GetArrayLength() != 21) throw new InvalidDataException("Ожидалось 21 точка на руку");
+                                var confidence = 1f;
+                                var gesture = "legacy";
+                                if (version >= 2)
+                                {
+                                    confidence = Finite(hand, "confidence");
+                                    if (confidence is < 0f or > 1f) throw new InvalidDataException("Confidence должна быть в [0,1]");
+                                    gesture = RequiredString(hand, "gesture");
+                                    if (gesture is not ("pinch" or "point" or "fist" or "open_palm" or "unknown"))
+                                        throw new InvalidDataException("Неизвестный жест руки");
+                                    if (hand.TryGetProperty("worldLandmarks", out var worldPoints) &&
+                                        worldPoints.ValueKind == JsonValueKind.Array &&
+                                        worldPoints.GetArrayLength() != 0 && worldPoints.GetArrayLength() != 21)
+                                        throw new InvalidDataException("worldLandmarks должны содержать 21 точку или быть пустыми");
+                                    if (!hand.TryGetProperty("rootPosition", out var rootPosition) ||
+                                        rootPosition.ValueKind != JsonValueKind.Object)
+                                        throw new InvalidDataException("Для v2 требуется rootPosition");
+                                    foreach (var axis in new[] { "x", "y", "z" })
+                                    {
+                                        var value = Finite(rootPosition, axis);
+                                        if (Math.Abs(value) > 3f)
+                                            throw new InvalidDataException("rootPosition вне допустимого диапазона ±3 м");
+                                    }
+                                }
+                                if (points.ValueKind != JsonValueKind.Array || points.GetArrayLength() != 21)
+                                    throw new InvalidDataException("Ожидалось 21 точка на руку");
                                 var wrist = points[0];
-                                var thumbTip = points[4];
-                                var indexTip = points[8];
-                                var pinchDx = Finite(thumbTip, "x") - Finite(indexTip, "x");
-                                var pinchDy = Finite(thumbTip, "y") - Finite(indexTip, "y");
-                                var pinchDistance = MathF.Sqrt(pinchDx * pinchDx + pinchDy * pinchDy);
-                                // A close thumb/index pair is exposed as an analog trigger.
-                                // This is 2D gesture input only; it is not a tracked 3D controller pose.
-                                var pinch = Math.Clamp((0.22f - pinchDistance) / 0.17f, 0f, 1f);
-                                if (label == "Left") leftPinch = pinch; else rightPinch = pinch;
                                 var skeleton = new PointF[21];
                                 var pointIndex = 0;
-                                descriptions.Add($"{label}: запястье ({Finite(wrist, "x"):F2}, {Finite(wrist, "y"):F2}, {Finite(wrist, "z"):F2})");
-                                foreach (var point in points.EnumerateArray()) { var px = Finite(point, "x"); var py = Finite(point, "y"); _ = Finite(point, "z"); if (px is < 0f or > 1f || py is < 0f or > 1f) throw new InvalidDataException("Координаты landmarks должны быть в [0,1]"); skeleton[pointIndex++] = new PointF(px, py); }
+                                descriptions.Add($"{label}: {gesture} · confidence {confidence:P0} · wrist ({Finite(wrist, "x"):F2}, {Finite(wrist, "y"):F2}, {Finite(wrist, "z"):F2})");
+                                foreach (var point in points.EnumerateArray())
+                                {
+                                    var px = Finite(point, "x");
+                                    var py = Finite(point, "y");
+                                    _ = Finite(point, "z");
+                                    if (px is < 0f or > 1f || py is < 0f or > 1f)
+                                        throw new InvalidDataException("Координаты landmarks должны быть в [0,1]");
+                                    skeleton[pointIndex++] = new PointF(px, py);
+                                }
                                 skeletons.Add(skeleton);
                             }
                             var handsText = handCount == 0 ? "Руки не обнаружены" : string.Join(" | ", descriptions);
                             var skeletonSnapshot = skeletons.ToArray();
-                            var controllerInput = JsonSerializer.SerializeToUtf8Bytes(new { left = leftPinch, right = rightPinch });
-                            _ = _handDriverRelay.SendAsync(controllerInput, controllerInput.Length,
+                            // Forward the original packet: v2 carries hand-centred world landmarks for skeletal input.
+                            _ = _handDriverRelay.SendAsync(packet.Buffer, packet.Buffer.Length,
                                 new IPEndPoint(IPAddress.Loopback, 9005));
                             UpdateUi(() => { _hands.Text = handsText; _handSkeleton = skeletonSnapshot; _camera.Invalidate(); });
                             break;

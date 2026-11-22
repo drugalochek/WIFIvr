@@ -25,9 +25,19 @@ The checkboxes below distinguish implemented code from hardware validation. A fe
 - [x] Compile an initial SteamVR/OpenVR server driver registering a virtual VRoom HMD
 - [x] Forward phone IMU orientation through the Windows host to the OpenVR driver
 - [x] Register a separate OpenVR display-redirect device
-- [x] Register left/right OpenVR controller devices with trigger, grip, and haptic input components
-- [x] Relay phone hand landmarks through the Windows host and expose thumb/index pinch as analog trigger and click inputs
-- [ ] Convert hand landmarks into calibrated controller poses and reliable spatial gestures
+- [x] Register left/right OpenVR hand endpoints and create `/input/skeleton/left` and `/input/skeleton/right` components
+- [x] Relay complete hand-pose v2 packets through Windows to the OpenVR driver
+- [x] Map MediaPipe's 21 hand-centred world landmarks into the 31-bone OpenVR parent-space hierarchy
+- [x] Estimate an initial HMD-local wrist root from apparent palm width and publish a tracked hand pose relative to the HMD
+- [x] Update both `WithController` and `WithoutController` skeletal motion ranges
+- [x] Add gesture-derived trigger (thumb-index pinch) and squeeze (closed fist) input components
+- [x] Add an Oculus Touch controller-type remapping layout for common OpenXR/SteamVR binding compatibility
+- [ ] Compile and validate the skeletal driver against the target SteamVR runtime
+- [ ] Verify Roblox detects VRoom as a VR HMD and accepts the mapped hand poses and gesture inputs
+- [ ] Add a comfortable locomotion input (thumbstick equivalent) and menu/secondary actions without requiring a physical controller
+- [ ] Verify bone orientation, handedness, and articulated hand rendering in a SteamVR skeletal-input test application
+- [ ] Replace the nominal palm-width/focal-scale root estimate with measured camera intrinsics and per-user palm calibration
+- [ ] Calibrate camera-to-HMD position/orientation and verify left/right coordinate axes in the headset
 - [ ] Add neutral-pose calibration and coordinate-axis mapping
 - [ ] Validate controller poses and inputs in SteamVR's device view and test applications
 - [ ] Validate compatibility with selected PC VR titles
@@ -38,6 +48,7 @@ The checkboxes below distinguish implemented code from hardware validation. A fe
 - [x] Encode captured frames as JPEG and relay them over loopback TCP 9004
 - [x] Relay compositor frames from Windows to Android over TCP 9002
 - [x] Add Android TCP receiver and VR display surface
+- [x] Run head IMU, MediaPipe hand tracking, camera uplink, and stereo display receiver in one Android VR session
 - [x] Split side-by-side frames into left/right eye regions on Android
 - [ ] Validate actual SteamVR compositor frames arrive continuously on the phone
 - [ ] Measure frame rate, frame age, dropped frames, and motion-to-photon latency
@@ -67,7 +78,7 @@ The checkboxes below distinguish implemented code from hardware validation. A fe
 
 ## Engineering constraints
 - Keep control telemetry separate from video transport.
-- Camera landmarks are image-space points, not calibrated room-space controller poses. Current pinch input is a 2D gesture signal and must not be interpreted as controller position.
+- Camera landmarks are image-space points. MediaPipe world landmarks are hand-centred estimates, not calibrated camera-space or room-space positions. The current driver estimates a rough HMD-relative wrist root from apparent palm width; it must not be treated as accurate room-space tracking until hand scale, camera intrinsics, and camera-to-HMD extrinsics are calibrated.
 - A phone IMU provides orientation, not reliable 6DoF position by itself.
 - A single RGB webcam's 2D pose output must not be presented as measured 3D tracking.
 - Do not inject locomotion from noisy or uncalibrated body estimates.

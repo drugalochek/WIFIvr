@@ -266,13 +266,13 @@ public:
     }
     const char* const* GetInterfaceVersions() override { return vr::k_InterfaceVersions; }
     void RunFrame() override {
+        const auto pose = MakePose();
         if (hmd_ && hmd_->ObjectId() != vr::k_unTrackedDeviceIndexInvalid) {
-            const auto pose = MakePose();
             vr::VRServerDriverHost()->TrackedDevicePoseUpdated(
                 hmd_->ObjectId(), pose, sizeof(vr::DriverPose_t));
         }
-        if (leftController_) leftController_->RunFrame();
-        if (rightController_) rightController_->RunFrame();
+        if (leftController_) leftController_->RunFrame(pose);
+        if (rightController_) rightController_->RunFrame(pose);
     }
     bool ShouldBlockStandbyMode() override { return false; }
     void EnterStandby() override {}
@@ -355,7 +355,14 @@ public:
         const bool uninitializeCom = SUCCEEDED(comResult);
         Microsoft::WRL::ComPtr<ID3D11Texture2D> source;
         const HANDLE shared = reinterpret_cast<HANDLE>(static_cast<uintptr_t>(sharedHandle));
-        if (FAILED(d3dDevice_->OpenSharedResource(shared, IID_PPV_ARGS(&source)))) {
+        const HRESULT openResult = d3dDevice_->OpenSharedResource(shared, IID_PPV_ARGS(&source));
+        if (FAILED(openResult)) {
+            static std::atomic<bool> loggedOpenFailure{false};
+            if (!loggedOpenFailure.exchange(true)) {
+                char message[192]{};
+                sprintf_s(message, "VRoom: D3D11 OpenSharedResource failed (HRESULT 0x%08X)", static_cast<unsigned>(openResult));
+                vr::VRDriverLog()->Log(message);
+            }
             if (uninitializeCom) CoUninitialize();
             return;
         }
@@ -378,7 +385,14 @@ public:
         }
         d3dContext_->CopyResource(staging.Get(), source.Get());
         D3D11_MAPPED_SUBRESOURCE mapped{};
-        if (FAILED(d3dContext_->Map(staging.Get(), 0, D3D11_MAP_READ, 0, &mapped))) {
+        const HRESULT mapResult = d3dContext_->Map(staging.Get(), 0, D3D11_MAP_READ, 0, &mapped);
+        if (FAILED(mapResult)) {
+            static std::atomic<bool> loggedMapFailure{false};
+            if (!loggedMapFailure.exchange(true)) {
+                char message[160]{};
+                sprintf_s(message, "VRoom: D3D11 staging texture Map failed (HRESULT 0x%08X)", static_cast<unsigned>(mapResult));
+                vr::VRDriverLog()->Log(message);
+            }
             if (uninitializeCom) CoUninitialize();
             return;
         }
@@ -440,7 +454,22 @@ public:
             }
         }
         if (uninitializeCom) CoUninitialize();
-        if (jpeg.empty()) return;
+        if (jpeg.empty()) {
+            static std::atomic<bool> loggedEncodeFailure{false};
+            if (!loggedEncodeFailure.exchange(true)) {
+                char message[160]{};
+                sprintf_s(message, "VRoom: compositor frame JPEG encoding produced no data (HRESULT 0x%08X)", static_cast<unsigned>(hr));
+                vr::VRDriverLog()->Log(message);
+            }
+            return;
+        }
+        static std::atomic<bool> loggedFirstEncodedFrame{false};
+        if (!loggedFirstEncodedFrame.exchange(true)) {
+            char message[160]{};
+            sprintf_s(message, "VRoom: first compositor frame encoded (%ux%u, %zu JPEG bytes)",
+                      desc.Width, desc.Height, jpeg.size());
+            vr::VRDriverLog()->Log(message);
+        }
         {
             std::lock_guard<std::mutex> lock(frameMutex_);
             latestFrame_ = std::move(jpeg);
@@ -477,24 +506,82 @@ private:
     }
 
     void ReceiveHandInputLoop() {
-        static const std::regex pattern(
-            R"("left"\s*:\s*([-+0-9.eE]+)\s*,\s*"right"\s*:\s*([-+0-9.eE]+))");
-        char buffer[512];
+        static const std::regex sidePattern(R"rx("handedness"\s*:\s*"(Left|Right)")rx");
+        static const std::regex confidencePattern(R"rx("confidence"\s*:\s*([-+0-9.eE]+))rx");
+        static const std::regex pinchPattern(R"rx("pinch"\s*:\s*([-+0-9.eE]+))rx");
+        static const std::regex gesturePattern(R"rx("gesture"\s*:\s*"(pinch|point|fist|open_palm|unknown)")rx");
+        static const std::regex worldPattern(R"rx("worldLandmarks"\s*:\s*\[([\s\S]*?)\])rx");
+        static const std::regex rootPattern(
+            R"rx("rootPosition"\s*:\s*\{\s*"x"\s*:\s*([-+0-9.eE]+)\s*,\s*"y"\s*:\s*([-+0-9.eE]+)\s*,\s*"z"\s*:\s*([-+0-9.eE]+)\s*\})rx");
+        static const std::regex pointPattern(
+            R"rx(\{\s*"x"\s*:\s*([-+0-9.eE]+)\s*,\s*"y"\s*:\s*([-+0-9.eE]+)\s*,\s*"z"\s*:\s*([-+0-9.eE]+)\s*\})rx");
+        char buffer[16384];
         while (!stopping_.load()) {
             const int count = recvfrom(handSocket_, buffer, sizeof(buffer) - 1, 0, nullptr, nullptr);
             if (count <= 0) continue;
             buffer[count] = '\0';
-            std::cmatch match;
-            if (!std::regex_search(buffer, match, pattern)) continue;
+            const std::string packet(buffer, static_cast<size_t>(count));
             try {
-                const float left = std::stof(match[1].str());
-                const float right = std::stof(match[2].str());
-                if (!std::isfinite(left) || !std::isfinite(right) ||
-                    left < -1.0f || left > 1.0f || right < -1.0f || right > 1.0f)
-                    continue;
-                if (leftController_) leftController_->SetPinch(left);
-                if (rightController_) rightController_->SetPinch(right);
-            } catch (...) { }
+                bool seenLeft = false, seenRight = false;
+                for (std::sregex_iterator it(packet.begin(), packet.end(), sidePattern), last; it != last; ++it) {
+                    const auto side = (*it)[1].str();
+                    const auto begin = static_cast<size_t>((*it).position());
+                    size_t finish = packet.size();
+                    const auto remaining = packet.substr(begin + static_cast<size_t>((*it).length()));
+                    std::smatch nextMatch;
+                    if (std::regex_search(remaining, nextMatch, sidePattern))
+                        finish = begin + static_cast<size_t>((*it).length()) + static_cast<size_t>(nextMatch.position());
+                    const auto object = packet.substr(begin, finish - begin);
+                    auto* controller = side == "Left" ? leftController_.get() : rightController_.get();
+                    if (!controller) continue;
+
+                    std::smatch confidenceMatch, pinchMatch, gestureMatch, worldMatch, rootMatch;
+                    if (!std::regex_search(object, confidenceMatch, confidencePattern) ||
+                        !std::regex_search(object, pinchMatch, pinchPattern) ||
+                        !std::regex_search(object, gestureMatch, gesturePattern) ||
+                        !std::regex_search(object, worldMatch, worldPattern) ||
+                        !std::regex_search(object, rootMatch, rootPattern)) {
+                        controller->ClearSkeleton();
+                        if (side == "Left") seenLeft = true; else seenRight = true;
+                        continue;
+                    }
+                    const float confidence = std::stof(confidenceMatch[1].str());
+                    const float pinch = std::stof(pinchMatch[1].str());
+                    const bool fist = gestureMatch[1].str() == "fist";
+                    if (!std::isfinite(confidence) || confidence < 0.0f || confidence > 1.0f ||
+                        !std::isfinite(pinch) || pinch < 0.0f || pinch > 1.0f) {
+                        controller->ClearSkeleton();
+                        if (side == "Left") seenLeft = true; else seenRight = true;
+                        continue;
+                    }
+                    std::array<std::array<float, 3>, 21> points{};
+                    const std::string coordinates = worldMatch[1].str();
+                    size_t pointCount = 0;
+                    for (std::sregex_iterator pointIt(coordinates.begin(), coordinates.end(), pointPattern), pointEnd;
+                         pointIt != pointEnd && pointCount < points.size(); ++pointIt) {
+                        points[pointCount] = {
+                            std::stof((*pointIt)[1].str()),
+                            std::stof((*pointIt)[2].str()),
+                            std::stof((*pointIt)[3].str())
+                        };
+                        ++pointCount;
+                    }
+                    if (pointCount == points.size()) {
+                        const std::array<float, 3> rootPositionHead{
+                            std::stof(rootMatch[1].str()),
+                            std::stof(rootMatch[2].str()),
+                            std::stof(rootMatch[3].str())
+                        };
+                        controller->SetHandPose(points, confidence, rootPositionHead, pinch, fist);
+                    } else controller->ClearSkeleton();
+                    if (side == "Left") seenLeft = true; else seenRight = true;
+                }
+                if (!seenLeft && leftController_) leftController_->ClearSkeleton();
+                if (!seenRight && rightController_) rightController_->ClearSkeleton();
+            } catch (...) {
+                if (leftController_) leftController_->ClearSkeleton();
+                if (rightController_) rightController_->ClearSkeleton();
+            }
         }
     }
 
@@ -545,6 +632,9 @@ vr::DriverPose_t VRoomDisplayRedirect::GetPose() {
 
 void VRoomDisplayRedirect::Present(const vr::PresentInfo_t* info, uint32_t size) {
     if (!info || size < sizeof(vr::PresentInfo_t)) return;
+    static std::atomic<bool> loggedFirstPresent{false};
+    if (!loggedFirstPresent.exchange(true))
+        vr::VRDriverLog()->Log("VRoom: SteamVR compositor called display Present; video capture path is active");
     // Per OpenVR's contract, Present must queue work and return quickly.
     // The potentially blocking GPU readback/JPEG encode happens in WaitForPresent.
     std::lock_guard<std::mutex> lock(presentMutex_);

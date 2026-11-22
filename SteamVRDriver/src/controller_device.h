@@ -1,9 +1,13 @@
 #pragma once
 
 #include <openvr_driver.h>
+#include <array>
 #include <atomic>
-#include <algorithm>
 #include <cmath>
+#include <algorithm>
+#include <chrono>
+#include <cstdint>
+#include <mutex>
 
 class VRoomController final : public vr::ITrackedDeviceServerDriver {
 public:
@@ -13,86 +17,263 @@ public:
         objectId_ = objectId;
         const auto container = vr::VRProperties()->TrackedDeviceToPropertyContainer(objectId);
         const bool isLeft = role_ == vr::TrackedControllerRole_LeftHand;
-        const char* side = isLeft ? "Left" : "Right";
         const char* serial = isLeft ? "VRoom_Controller_Left" : "VRoom_Controller_Right";
 
         vr::VRProperties()->SetInt32Property(container, vr::Prop_ControllerRoleHint_Int32, role_);
         vr::VRProperties()->SetStringProperty(container, vr::Prop_TrackingSystemName_String, "VRoom");
-        vr::VRProperties()->SetStringProperty(container, vr::Prop_ModelNumber_String, "VRoom Hand Controller");
+        vr::VRProperties()->SetStringProperty(container, vr::Prop_ModelNumber_String, "VRoom Skeletal Hand");
         vr::VRProperties()->SetStringProperty(container, vr::Prop_SerialNumber_String, serial);
         vr::VRProperties()->SetStringProperty(container, vr::Prop_ManufacturerName_String, "VRoom");
-        vr::VRProperties()->SetStringProperty(container, vr::Prop_ControllerType_String, "vroom_controller");
-        vr::VRProperties()->SetStringProperty(
-            container, vr::Prop_InputProfilePath_String,
+        vr::VRProperties()->SetStringProperty(container, vr::Prop_ControllerType_String, "vroom_hand");
+        vr::VRProperties()->SetStringProperty(container, vr::Prop_InputProfilePath_String,
             "{vroom}/resources/input/vroom_controller_profile.json");
 
         auto* input = vr::VRDriverInput();
+        if (input->CreateSkeletonComponent(container,
+                isLeft ? "/input/skeleton/left" : "/input/skeleton/right",
+                isLeft ? "/skeleton/hand/left" : "/skeleton/hand/right",
+                "/pose/raw", vr::VRSkeletalTracking_Partial, nullptr, 0, &skeleton_) != vr::VRInputError_None) {
+            vr::VRDriverLog()->Log("VRoom: failed to create OpenVR skeletal hand component");
+            objectId_ = vr::k_unTrackedDeviceIndexInvalid;
+            return vr::VRInitError_Driver_Unknown;
+        }
+
+        // Gesture-derived controls for controller-oriented VR titles:
+        // pinch drives the analog trigger; a closed fist drives squeeze.
         if (input->CreateScalarComponent(container, "/input/trigger/value", &triggerValue_,
                 vr::VRScalarType_Absolute, vr::VRScalarUnits_NormalizedOneSided) != vr::VRInputError_None ||
             input->CreateBooleanComponent(container, "/input/trigger/click", &triggerClick_) != vr::VRInputError_None ||
-            input->CreateScalarComponent(container, "/input/grip/value", &gripValue_,
+            input->CreateScalarComponent(container, "/input/squeeze/value", &squeezeValue_,
                 vr::VRScalarType_Absolute, vr::VRScalarUnits_NormalizedOneSided) != vr::VRInputError_None ||
-            input->CreateBooleanComponent(container, "/input/grip/click", &gripClick_) != vr::VRInputError_None ||
-            input->CreateHapticComponent(container, "/output/haptic", &haptic_) != vr::VRInputError_None) {
-            vr::VRDriverLog()->Log("VRoom: failed to create controller input components");
+            input->CreateBooleanComponent(container, "/input/squeeze/click", &squeezeClick_) != vr::VRInputError_None) {
+            vr::VRDriverLog()->Log("VRoom: failed to create gesture-derived controller input components");
             objectId_ = vr::k_unTrackedDeviceIndexInvalid;
             return vr::VRInitError_Driver_Unknown;
         }
 
         vr::VRDriverLog()->Log(isLeft
-            ? "VRoom: left hand controller registered (2D pinch inputs; pose awaits calibration)"
-            : "VRoom: right hand controller registered (2D pinch inputs; pose awaits calibration)");
+            ? "VRoom: left skeletal hand registered; pinch=trigger, fist=squeeze; approximate HMD-relative root; calibration required"
+            : "VRoom: right skeletal hand registered; pinch=trigger, fist=squeeze; approximate HMD-relative root; calibration required");
         return vr::VRInitError_None;
     }
 
     void Deactivate() override { objectId_ = vr::k_unTrackedDeviceIndexInvalid; }
     void EnterStandby() override {}
+    vr::DriverPose_t GetPose() override {
+        std::lock_guard<std::mutex> lock(poseMutex_);
+        return lastPose_;
+    }
     void* GetComponent(const char*) override { return nullptr; }
     void DebugRequest(const char*, char* response, uint32_t size) override {
         if (response && size) response[0] = '\0';
     }
 
-    vr::DriverPose_t GetPose() override {
-        vr::DriverPose_t pose{};
-        pose.qWorldFromDriverRotation = {1.0, 0.0, 0.0, 0.0};
-        pose.qDriverFromHeadRotation = {1.0, 0.0, 0.0, 0.0};
-        pose.qRotation = {1.0, 0.0, 0.0, 0.0};
-        pose.result = vr::TrackingResult_Uninitialized;
-        pose.poseIsValid = false;
-        pose.deviceIsConnected = true;
-        return pose;
-    }
-
-    void SetPinch(float value) {
-        if (!std::isfinite(value) || value < 0.0f) {
-            tracked_.store(false, std::memory_order_release);
-            pinch_.store(0.0f, std::memory_order_relaxed);
+    // rootPositionHead is an approximate wrist position in HMD-local OpenVR metres.
+    // It is estimated from palm width and the phone camera image, not a calibrated depth sensor.
+    void SetHandPose(const std::array<std::array<float, 3>, 21>& points, float confidence,
+                     const std::array<float, 3>& rootPositionHead, float pinch, bool fist) {
+        if (!std::isfinite(confidence) || confidence < 0.35f) {
+            ClearSkeleton();
             return;
         }
-        tracked_.store(true, std::memory_order_release);
-        pinch_.store(std::clamp(value, 0.0f, 1.0f), std::memory_order_relaxed);
+        for (const auto& p : points) {
+            if (!std::isfinite(p[0]) || !std::isfinite(p[1]) || !std::isfinite(p[2])) {
+                ClearSkeleton();
+                return;
+            }
+        }
+        for (float value : rootPositionHead) {
+            if (!std::isfinite(value) || std::abs(value) > 3.0f) {
+                ClearSkeleton();
+                return;
+            }
+        }
+        if (!std::isfinite(pinch)) {
+            ClearSkeleton();
+            return;
+        }
+        triggerValueState_.store(std::clamp(pinch, 0.0f, 1.0f), std::memory_order_release);
+        triggerClickState_.store(pinch >= 0.75f, std::memory_order_release);
+        squeezeValueState_.store(fist ? 1.0f : 0.0f, std::memory_order_release);
+        squeezeClickState_.store(fist, std::memory_order_release);
+
+        std::array<vr::VRBoneTransform_t, 31> bones{};
+        for (auto& bone : bones) {
+            bone.position = {0.0f, 0.0f, 0.0f, 1.0f};
+            bone.orientation = {1.0f, 0.0f, 0.0f, 0.0f};
+        }
+
+        // OpenVR: root, wrist, thumb[4], four five-bone fingers, five auxiliary bones.
+        // MediaPipe: wrist 0; thumb 1..4; index 5..8; middle 9..12; ring 13..16; little 17..20.
+        const int boneStarts[5] = {2, 6, 11, 16, 21};
+        const int landmarkStarts[5] = {1, 5, 9, 13, 17};
+        for (int finger = 0; finger < 5; ++finger) {
+            Quat parentGlobal{};
+            int parentLandmark = 0;
+            for (int segment = 0; segment < 4; ++segment) {
+                const int boneIndex = boneStarts[finger] + segment;
+                const int landmarkIndex = landmarkStarts[finger] + segment;
+                const Vec3 parent = ToOpenVr(points[parentLandmark]);
+                const Vec3 joint = ToOpenVr(points[landmarkIndex]);
+                const Vec3 delta = Subtract(joint, parent);
+                const Quat globalOrientation = RotationFromPositiveX(delta);
+                const Quat inverseParent = Conjugate(parentGlobal);
+                const Vec3 localPosition = Rotate(inverseParent, delta);
+                const Quat localOrientation = Multiply(inverseParent, globalOrientation);
+                bones[boneIndex].position = {localPosition.x, localPosition.y, localPosition.z, 1.0f};
+                bones[boneIndex].orientation = {
+                    localOrientation.w, localOrientation.x, localOrientation.y, localOrientation.z
+                };
+                parentGlobal = globalOrientation;
+                parentLandmark = landmarkIndex;
+            }
+            if (finger > 0) {
+                const int tipBone = boneStarts[finger] + 4;
+                bones[tipBone].position = {0.0f, 0.0f, 0.0f, 1.0f};
+                bones[tipBone].orientation = {1.0f, 0.0f, 0.0f, 0.0f};
+            }
+        }
+
+        {
+            std::lock_guard<std::mutex> lock(skeletonMutex_);
+            skeletonTransforms_ = bones;
+            rootPositionHead_ = rootPositionHead;
+        }
+        hasSkeleton_.store(true, std::memory_order_release);
+        lastUpdateMs_.store(NowMs(), std::memory_order_release);
     }
 
-    void RunFrame() {
+    void ClearSkeleton() {
+        hasSkeleton_.store(false, std::memory_order_release);
+        triggerValueState_.store(0.0f, std::memory_order_release);
+        triggerClickState_.store(false, std::memory_order_release);
+        squeezeValueState_.store(0.0f, std::memory_order_release);
+        squeezeClickState_.store(false, std::memory_order_release);
+        lastUpdateMs_.store(NowMs(), std::memory_order_release);
+    }
+
+    void RunFrame(const vr::DriverPose_t& hmdPose) {
         if (objectId_ == vr::k_unTrackedDeviceIndexInvalid) return;
-        const bool tracked = tracked_.load(std::memory_order_acquire);
-        const float trigger = tracked ? pinch_.load(std::memory_order_relaxed) : 0.0f;
-        vr::VRDriverInput()->UpdateScalarComponent(triggerValue_, trigger, 0.0);
-        vr::VRDriverInput()->UpdateBooleanComponent(triggerClick_, tracked && trigger >= 0.65f, 0.0);
-        // Grip is deliberately not synthesized from 2D landmarks.
-        vr::VRDriverInput()->UpdateScalarComponent(gripValue_, 0.0f, 0.0);
-        vr::VRDriverInput()->UpdateBooleanComponent(gripClick_, false, 0.0);
-        vr::VRServerDriverHost()->TrackedDevicePoseUpdated(objectId_, GetPose(), sizeof(vr::DriverPose_t));
+        const auto now = NowMs();
+        const bool fresh = hasSkeleton_.load(std::memory_order_acquire) &&
+            now - lastUpdateMs_.load(std::memory_order_acquire) <= 300;
+        if (!fresh) hasSkeleton_.store(false, std::memory_order_release);
+
+        std::array<vr::VRBoneTransform_t, 31> snapshot{};
+        std::array<float, 3> root{};
+        if (fresh) {
+            std::lock_guard<std::mutex> lock(skeletonMutex_);
+            snapshot = skeletonTransforms_;
+            root = rootPositionHead_;
+        } else {
+            for (auto& bone : snapshot) {
+                bone.position = {0.0f, 0.0f, 0.0f, 1.0f};
+                bone.orientation = {1.0f, 0.0f, 0.0f, 0.0f};
+            }
+        }
+        auto* input = vr::VRDriverInput();
+        input->UpdateSkeletonComponent(skeleton_, vr::VRSkeletalMotionRange_WithController,
+            snapshot.data(), static_cast<uint32_t>(snapshot.size()));
+        input->UpdateSkeletonComponent(skeleton_, vr::VRSkeletalMotionRange_WithoutController,
+            snapshot.data(), static_cast<uint32_t>(snapshot.size()));
+        const bool controlsFresh = fresh;
+        input->UpdateScalarComponent(triggerValue_, controlsFresh
+            ? triggerValueState_.load(std::memory_order_acquire) : 0.0f, 0.0);
+        input->UpdateBooleanComponent(triggerClick_, controlsFresh &&
+            triggerClickState_.load(std::memory_order_acquire), 0.0);
+        input->UpdateScalarComponent(squeezeValue_, controlsFresh
+            ? squeezeValueState_.load(std::memory_order_acquire) : 0.0f, 0.0);
+        input->UpdateBooleanComponent(squeezeClick_, controlsFresh &&
+            squeezeClickState_.load(std::memory_order_acquire), 0.0);
+
+        vr::DriverPose_t handPose{};
+        handPose.qWorldFromDriverRotation = hmdPose.qWorldFromDriverRotation;
+        handPose.qDriverFromHeadRotation = hmdPose.qDriverFromHeadRotation;
+        handPose.qRotation = hmdPose.qRotation;
+        handPose.vecPosition[0] = hmdPose.vecPosition[0];
+        handPose.vecPosition[1] = hmdPose.vecPosition[1];
+        handPose.vecPosition[2] = hmdPose.vecPosition[2];
+        if (fresh && hmdPose.poseIsValid) {
+            const Quat headRotation{hmdPose.qRotation.w, hmdPose.qRotation.x,
+                                    hmdPose.qRotation.y, hmdPose.qRotation.z};
+            const Vec3 local{root[0], root[1], root[2]};
+            const Vec3 worldOffset = Rotate(headRotation, local);
+            handPose.vecPosition[0] += worldOffset.x;
+            handPose.vecPosition[1] += worldOffset.y;
+            handPose.vecPosition[2] += worldOffset.z;
+            handPose.result = vr::TrackingResult_Running_OK;
+            handPose.poseIsValid = true;
+        } else {
+            handPose.result = vr::TrackingResult_Uninitialized;
+            handPose.poseIsValid = false;
+        }
+        handPose.deviceIsConnected = true;
+        handPose.willDriftInYaw = hmdPose.willDriftInYaw;
+        handPose.shouldApplyHeadModel = false;
+        {
+            std::lock_guard<std::mutex> lock(poseMutex_);
+            lastPose_ = handPose;
+        }
+        vr::VRServerDriverHost()->TrackedDevicePoseUpdated(objectId_, handPose, sizeof(vr::DriverPose_t));
     }
 
 private:
+    struct Vec3 { float x, y, z; };
+    struct Quat { float w = 1.0f, x = 0.0f, y = 0.0f, z = 0.0f; };
+
+    Vec3 ToOpenVr(const std::array<float, 3>& point) const {
+        const float handedX = role_ == vr::TrackedControllerRole_RightHand ? -point[0] : point[0];
+        return {handedX, -point[1], -point[2]};
+    }
+    static Vec3 Subtract(const Vec3& a, const Vec3& b) {
+        return {a.x - b.x, a.y - b.y, a.z - b.z};
+    }
+    static Quat Conjugate(const Quat& q) { return {q.w, -q.x, -q.y, -q.z}; }
+    static Quat Multiply(const Quat& a, const Quat& b) {
+        return {
+            a.w*b.w - a.x*b.x - a.y*b.y - a.z*b.z,
+            a.w*b.x + a.x*b.w + a.y*b.z - a.z*b.y,
+            a.w*b.y - a.x*b.z + a.y*b.w + a.z*b.x,
+            a.w*b.z + a.x*b.y - a.y*b.x + a.z*b.w
+        };
+    }
+    static Vec3 Rotate(const Quat& q, const Vec3& v) {
+        const Quat p{0.0f, v.x, v.y, v.z};
+        const Quat r = Multiply(Multiply(q, p), Conjugate(q));
+        return {r.x, r.y, r.z};
+    }
+    // Valve's sample skeletal driver uses +X as the local segment axis.
+    static Quat RotationFromPositiveX(const Vec3& direction) {
+        const float length = std::sqrt(direction.x*direction.x + direction.y*direction.y + direction.z*direction.z);
+        if (!std::isfinite(length) || length < 1e-6f) return {};
+        const float x = direction.x / length;
+        const float y = direction.y / length;
+        const float z = direction.z / length;
+        if (x < -0.999999f) return {0.0f, 0.0f, 1.0f, 0.0f};
+        const float scale = std::sqrt(2.0f * (1.0f + x));
+        return {scale * 0.5f, 0.0f, -z / scale, y / scale};
+    }
+    static int64_t NowMs() {
+        using namespace std::chrono;
+        return duration_cast<milliseconds>(steady_clock::now().time_since_epoch()).count();
+    }
+
     vr::ETrackedControllerRole role_;
     uint32_t objectId_ = vr::k_unTrackedDeviceIndexInvalid;
+    vr::VRInputComponentHandle_t skeleton_ = 0;
     vr::VRInputComponentHandle_t triggerValue_ = 0;
     vr::VRInputComponentHandle_t triggerClick_ = 0;
-    vr::VRInputComponentHandle_t gripValue_ = 0;
-    vr::VRInputComponentHandle_t gripClick_ = 0;
-    vr::VRInputComponentHandle_t haptic_ = 0;
-    std::atomic<bool> tracked_{false};
-    std::atomic<float> pinch_{0.0f};
+    vr::VRInputComponentHandle_t squeezeValue_ = 0;
+    vr::VRInputComponentHandle_t squeezeClick_ = 0;
+    std::atomic<float> triggerValueState_{0.0f};
+    std::atomic<bool> triggerClickState_{false};
+    std::atomic<float> squeezeValueState_{0.0f};
+    std::atomic<bool> squeezeClickState_{false};
+    std::atomic<bool> hasSkeleton_{false};
+    std::atomic<int64_t> lastUpdateMs_{0};
+    std::mutex skeletonMutex_;
+    std::array<vr::VRBoneTransform_t, 31> skeletonTransforms_{};
+    std::array<float, 3> rootPositionHead_{};
+    mutable std::mutex poseMutex_;
+    vr::DriverPose_t lastPose_{};
 };
