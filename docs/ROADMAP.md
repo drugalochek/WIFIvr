@@ -7,6 +7,8 @@
 - [x] Android head orientation sender
 - [x] Android local MediaPipe hand tracking and UDP sender
 - [x] Windows telemetry receiver and desktop dashboard
+- [x] Android-to-Windows camera preview stream over TCP
+- [x] Windows camera preview panel
 - [x] Clamp normalized image-space hand coordinates at the Android sender
 - [ ] Measure packet rate, loss, and end-to-end latency on real hardware
 
@@ -18,6 +20,7 @@
 - [ ] Validate compatibility with selected PC VR titles
 
 ## Milestone 2 — PC-to-phone video
+- [ ] Add Android TCP receiver and VR display surface for incoming PC frames
 - [ ] Capture desktop/game frames on Windows
 - [ ] Encode and stream video to Android over a low-latency transport
 - [ ] Render separate left/right eye views on Android
