@@ -42,6 +42,8 @@ internal sealed class DashboardForm : Form
     private Task? _cameraListener;
     private TcpListener? _tcpListener;
     private long _cameraFrames;
+    private PointF[][] _handSkeleton = Array.Empty<PointF[]>();
+    private static readonly (int A, int B)[] HandBones = { (0,1),(1,2),(2,3),(3,4),(0,5),(5,6),(6,7),(7,8),(5,9),(9,10),(10,11),(11,12),(9,13),(13,14),(14,15),(15,16),(13,17),(17,18),(18,19),(19,20),(0,17) };
     private readonly PictureBox _pcCamera = new() { Dock = DockStyle.Fill, BackColor = Color.Black, SizeMode = PictureBoxSizeMode.Zoom };
     private readonly ComboBox _pcCameraIndex = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 100 };
     private readonly Button _pcCameraToggle = new() { Text = "Запустить веб-камеру", AutoSize = true };
@@ -105,6 +107,7 @@ internal sealed class DashboardForm : Form
         cameraHeader.Controls.Add(_cameraStatus);
         cameraPanel.Controls.Add(cameraHeader, 0, 0);
         cameraPanel.Controls.Add(_camera, 0, 1);
+        _camera.Paint += DrawHandSkeleton;
         var tabs = new TabControl { Dock = DockStyle.Fill };
         var phoneTab = new TabPage("Камера телефона") { BackColor = BackColor };
         phoneTab.Controls.Add(cameraPanel);
@@ -378,6 +381,7 @@ internal sealed class DashboardForm : Form
                             var handCount = array.GetArrayLength();
                             if (handCount > 2) throw new InvalidDataException("Некорректный список рук");
                             var descriptions = new List<string>();
+                            var skeletons = new List<PointF[]>();
                             foreach (var hand in array.EnumerateArray())
                             {
                                 var label = RequiredString(hand, "handedness");
@@ -385,11 +389,15 @@ internal sealed class DashboardForm : Form
                                 var points = hand.GetProperty("landmarks");
                                 if (points.ValueKind != JsonValueKind.Array || points.GetArrayLength() != 21) throw new InvalidDataException("Ожидалось 21 точка на руку");
                                 var wrist = points[0];
+                                var skeleton = new PointF[21];
+                                var pointIndex = 0;
                                 descriptions.Add($"{label}: запястье ({Finite(wrist, "x"):F2}, {Finite(wrist, "y"):F2}, {Finite(wrist, "z"):F2})");
-                                foreach (var point in points.EnumerateArray()) { _ = Finite(point, "x"); _ = Finite(point, "y"); _ = Finite(point, "z"); }
+                                foreach (var point in points.EnumerateArray()) { var px = Finite(point, "x"); var py = Finite(point, "y"); _ = Finite(point, "z"); if (px is < 0f or > 1f || py is < 0f or > 1f) throw new InvalidDataException("Координаты landmarks должны быть в [0,1]"); skeleton[pointIndex++] = new PointF(px, py); }
+                                skeletons.Add(skeleton);
                             }
                             var handsText = handCount == 0 ? "Руки не обнаружены" : string.Join(" | ", descriptions);
-                            UpdateUi(() => _hands.Text = handsText);
+                            var skeletonSnapshot = skeletons.ToArray();
+                            UpdateUi(() => { _hands.Text = handsText; _handSkeleton = skeletonSnapshot; _camera.Invalidate(); });
                             break;
                         }
                         default: throw new InvalidDataException($"Неизвестный пакет {type} v{version}");
@@ -405,6 +413,26 @@ internal sealed class DashboardForm : Form
         catch (SocketException) when (token.IsCancellationRequested) { }
         catch (OperationCanceledException) when (token.IsCancellationRequested) { }
         catch (Exception ex) { Log("Ошибка UDP: " + ex.Message); UpdateUi(() => _status.Text = "Ошибка приёмника"); }
+    }
+
+    private void DrawHandSkeleton(object? sender, PaintEventArgs e)
+    {
+        var frame = _camera.Image;
+        if (frame is null) return;
+        var scale = Math.Min(_camera.ClientSize.Width / (float)frame.Width, _camera.ClientSize.Height / (float)frame.Height);
+        var drawWidth = frame.Width * scale;
+        var drawHeight = frame.Height * scale;
+        var offsetX = (_camera.ClientSize.Width - drawWidth) / 2f;
+        var offsetY = (_camera.ClientSize.Height - drawHeight) / 2f;
+        PointF Map(PointF p) => new(offsetX + p.X * drawWidth, offsetY + p.Y * drawHeight);
+        e.Graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+        using var bonePen = new Pen(Color.FromArgb(235, 73, 226, 178), Math.Max(2f, scale * 3f)) { StartCap = System.Drawing.Drawing2D.LineCap.Round, EndCap = System.Drawing.Drawing2D.LineCap.Round };
+        using var jointBrush = new SolidBrush(Color.White);
+        foreach (var hand in _handSkeleton)
+        {
+            foreach (var (a, b) in HandBones) e.Graphics.DrawLine(bonePen, Map(hand[a]), Map(hand[b]));
+            foreach (var point in hand) { var p = Map(point); var r = Math.Max(2.5f, scale * 4f); e.Graphics.FillEllipse(jointBrush, p.X-r, p.Y-r, r*2, r*2); }
+        }
     }
 
     private static string RequiredString(JsonElement element, string key) =>
