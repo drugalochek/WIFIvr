@@ -24,7 +24,13 @@ APK output: `app/build/outputs/apk/debug/app-debug.apk`.
 4. Open VRoom on the phone, enter the PC address, and tap **Connect**.
 5. Allow the Windows firewall prompt for the receiver on private networks.
 
-This milestone sends head orientation and includes a camera-based hand landmark preview. It does not yet stream PC video, render a stereo headset view, provide room-scale positional tracking, or provide an OpenXR runtime.
+This milestone sends head orientation, includes a camera-based hand landmark preview, and adds a per-user room-area setup screen with ARCore availability detection. Room dimensions are currently a saved rectangular draft only: live ARCore pose tracking, automatic wall scanning, boundary alerts, PC position packets, PC video streaming, stereo headset rendering, and an OpenXR runtime are not implemented yet.
+
+## Room profiles (early setup)
+
+Open **Room and play area** from the home screen. Enter a profile name and the approximate width and length of the safe area; values are stored locally per profile on this phone. The screen checks whether ARCore is supported by the device. ARCore is an optional dependency so phones without it can still use orientation streaming.
+
+The saved rectangle is configuration data, not a detected room mesh or a safety system. Do not use it as a collision warning until live positional tracking and boundary checks are implemented and tested.
 
 ## Hand camera check
 
