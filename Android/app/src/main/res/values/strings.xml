@@ -26,6 +26,7 @@
     <string name="back_camera_active">Rear camera active · show up to two hands</string>
     <string name="camera_start_error">Could not start camera: %1$s</string>
     <string name="camera_frame_error">Camera frame error: %1$s</string>
+    <string name="room_saved_profile">Saved profile: %1$s</string>
     <string name="room_title">Your play space</string>
     <string name="room_intro">Room settings are saved on this phone. Each person can configure their own play area.</string>
     <string name="ar_checking">Checking spatial tracking support…</string>
