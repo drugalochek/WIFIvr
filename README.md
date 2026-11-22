@@ -53,3 +53,12 @@ Open the repository's Actions tab, select the latest successful **Build VRoom** 
 2. Map head orientation and calibrated hand tracking into runtime device poses and inputs.
 3. Capture PC game frames and stream a low-latency stereo video feed to Android.
 4. Add lens calibration, stereo geometry, timing and latency measurements.
+
+
+## VRoom Desktop features
+
+The Windows desktop application has tabs for the phone camera stream, an optional PC webcam preview, and VR/motion profile settings. The PC webcam tab currently captures and displays a selected local camera; full-body pose estimation and joint streaming are not implemented yet.
+
+Overlay placement, scale, distance, locomotion mode, sensitivity, and smoothing values can be saved to `%LOCALAPPDATA%\\VRoom\\settings.json`. These are configuration profiles for the upcoming spatial overlay and motion engine, not active in-game controls until the VR runtime is connected.
+
+The Android camera uplink reconnects to TCP port 9001 when VRoom Desktop becomes available again.
