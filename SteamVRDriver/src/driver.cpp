@@ -8,6 +8,7 @@
 #include <objbase.h>
 #include <oleauto.h>
 #include <openvr_driver.h>
+#include "controller_device.h"
 #include <atomic>
 #include <chrono>
 #include <ctime>
@@ -198,6 +199,36 @@ public:
             vr::VRDriverLog()->Log("VRoom: SteamVR rejected HMD registration");
             return vr::VRInitError_Driver_Unknown;
         }
+
+        leftController_ = std::make_unique<VRoomController>(vr::TrackedControllerRole_LeftHand);
+        rightController_ = std::make_unique<VRoomController>(vr::TrackedControllerRole_RightHand);
+        if (!vr::VRServerDriverHost()->TrackedDeviceAdded(
+                "VRoom_Controller_Left", vr::TrackedDeviceClass_Controller, leftController_.get()) ||
+            !vr::VRServerDriverHost()->TrackedDeviceAdded(
+                "VRoom_Controller_Right", vr::TrackedDeviceClass_Controller, rightController_.get())) {
+            vr::VRDriverLog()->Log("VRoom: SteamVR rejected one or both controller registrations");
+            return vr::VRInitError_Driver_Unknown;
+        }
+
+        handSocket_ = ::socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+        if (handSocket_ != INVALID_SOCKET) {
+            DWORD timeout = 250;
+            setsockopt(handSocket_, SOL_SOCKET, SO_RCVTIMEO,
+                       reinterpret_cast<const char*>(&timeout), sizeof(timeout));
+            sockaddr_in handAddress{};
+            handAddress.sin_family = AF_INET;
+            handAddress.sin_port = htons(9005);
+            handAddress.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+            if (::bind(handSocket_, reinterpret_cast<sockaddr*>(&handAddress), sizeof(handAddress)) != 0) {
+                closesocket(handSocket_);
+                handSocket_ = INVALID_SOCKET;
+                vr::VRDriverLog()->Log("VRoom: could not bind local hand-input relay on 127.0.0.1:9005");
+            } else {
+                handReceiver_ = std::thread([this] { ReceiveHandInputLoop(); });
+                vr::VRDriverLog()->Log("VRoom: hand-input relay listening on 127.0.0.1:9005");
+            }
+        }
+
         displayRedirect_ = std::make_unique<VRoomDisplayRedirect>(this);
         if (!vr::VRServerDriverHost()->TrackedDeviceAdded(
                 "VRoom_Display_001", vr::TrackedDeviceClass_DisplayRedirect, displayRedirect_.get())) {
@@ -219,7 +250,12 @@ public:
             closesocket(socket_);
             socket_ = INVALID_SOCKET;
         }
+        if (handSocket_ != INVALID_SOCKET) {
+            closesocket(handSocket_);
+            handSocket_ = INVALID_SOCKET;
+        }
         if (receiver_.joinable()) receiver_.join();
+        if (handReceiver_.joinable()) handReceiver_.join();
         if (frameThread_.joinable()) frameThread_.join();
         displayRedirect_.reset();
         hmd_.reset();
@@ -230,10 +266,13 @@ public:
     }
     const char* const* GetInterfaceVersions() override { return vr::k_InterfaceVersions; }
     void RunFrame() override {
-        if (!hmd_ || hmd_->ObjectId() == vr::k_unTrackedDeviceIndexInvalid) return;
-        const auto pose = MakePose();
-        vr::VRServerDriverHost()->TrackedDevicePoseUpdated(
-            hmd_->ObjectId(), pose, sizeof(vr::DriverPose_t));
+        if (hmd_ && hmd_->ObjectId() != vr::k_unTrackedDeviceIndexInvalid) {
+            const auto pose = MakePose();
+            vr::VRServerDriverHost()->TrackedDevicePoseUpdated(
+                hmd_->ObjectId(), pose, sizeof(vr::DriverPose_t));
+        }
+        if (leftController_) leftController_->RunFrame();
+        if (rightController_) rightController_->RunFrame();
     }
     bool ShouldBlockStandbyMode() override { return false; }
     void EnterStandby() override {}
@@ -437,13 +476,39 @@ private:
         }
     }
 
+    void ReceiveHandInputLoop() {
+        static const std::regex pattern(
+            R"("left"\s*:\s*([-+0-9.eE]+)\s*,\s*"right"\s*:\s*([-+0-9.eE]+))");
+        char buffer[512];
+        while (!stopping_.load()) {
+            const int count = recvfrom(handSocket_, buffer, sizeof(buffer) - 1, 0, nullptr, nullptr);
+            if (count <= 0) continue;
+            buffer[count] = '\0';
+            std::cmatch match;
+            if (!std::regex_search(buffer, match, pattern)) continue;
+            try {
+                const float left = std::stof(match[1].str());
+                const float right = std::stof(match[2].str());
+                if (!std::isfinite(left) || !std::isfinite(right) ||
+                    left < -1.0f || left > 1.0f || right < -1.0f || right > 1.0f)
+                    continue;
+                if (leftController_) leftController_->SetPinch(left);
+                if (rightController_) rightController_->SetPinch(right);
+            } catch (...) { }
+        }
+    }
+
     std::unique_ptr<VRoomHmd> hmd_;
+    std::unique_ptr<VRoomController> leftController_;
+    std::unique_ptr<VRoomController> rightController_;
     std::unique_ptr<VRoomDisplayRedirect> displayRedirect_;
     Microsoft::WRL::ComPtr<ID3D11Device> d3dDevice_;
     Microsoft::WRL::ComPtr<ID3D11DeviceContext> d3dContext_;
     SOCKET socket_ = INVALID_SOCKET;
+    SOCKET handSocket_ = INVALID_SOCKET;
     SOCKET frameListenSocket_ = INVALID_SOCKET;
     std::thread receiver_;
+    std::thread handReceiver_;
     std::thread frameThread_;
     std::mutex frameMutex_;
     std::condition_variable frameCondition_;
