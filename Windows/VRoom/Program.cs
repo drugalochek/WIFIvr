@@ -374,7 +374,9 @@ internal sealed class DashboardForm : Form
                         case ("hand_pose", 1):
                         {
                             var array = root.GetProperty("hands");
-                            if (array.ValueKind != JsonValueKind.Array || array.GetArrayLength() > 2) throw new InvalidDataException("Некорректный список рук");
+                            if (array.ValueKind != JsonValueKind.Array) throw new InvalidDataException("Некорректный список рук");
+                            var handCount = array.GetArrayLength();
+                            if (handCount > 2) throw new InvalidDataException("Некорректный список рук");
                             var descriptions = new List<string>();
                             foreach (var hand in array.EnumerateArray())
                             {
@@ -386,7 +388,8 @@ internal sealed class DashboardForm : Form
                                 descriptions.Add($"{label}: запястье ({Finite(wrist, "x"):F2}, {Finite(wrist, "y"):F2}, {Finite(wrist, "z"):F2})");
                                 foreach (var point in points.EnumerateArray()) { _ = Finite(point, "x"); _ = Finite(point, "y"); _ = Finite(point, "z"); }
                             }
-                            UpdateUi(() => _hands.Text = array.GetArrayLength() == 0 ? "Руки не обнаружены" : string.Join(" | ", descriptions));
+                            var handsText = handCount == 0 ? "Руки не обнаружены" : string.Join(" | ", descriptions);
+                            UpdateUi(() => _hands.Text = handsText);
                             break;
                         }
                         default: throw new InvalidDataException($"Неизвестный пакет {type} v{version}");
