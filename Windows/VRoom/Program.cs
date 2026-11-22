@@ -43,7 +43,10 @@ internal sealed class DashboardForm : Form
     private TcpListener? _tcpListener;
     private long _cameraFrames;
     private PointF[][] _handSkeleton = Array.Empty<PointF[]>();
+    private PointF[] _bodySkeleton = Array.Empty<PointF>();
+    private readonly Label _body = MakeValue("Нет данных");
     private static readonly (int A, int B)[] HandBones = { (0,1),(1,2),(2,3),(3,4),(0,5),(5,6),(6,7),(7,8),(5,9),(9,10),(10,11),(11,12),(9,13),(13,14),(14,15),(15,16),(13,17),(17,18),(18,19),(19,20),(0,17) };
+    private static readonly (int A, int B)[] BodyBones = { (11,12),(11,13),(13,15),(15,17),(15,19),(15,21),(12,14),(14,16),(16,18),(16,20),(16,22),(11,23),(12,24),(23,24),(23,25),(25,27),(27,29),(29,31),(27,31),(24,26),(26,28),(28,30),(30,32),(28,32),(0,1),(1,2),(2,3),(3,7),(0,4),(4,5),(5,6),(6,8),(9,10) };
     private readonly PictureBox _pcCamera = new() { Dock = DockStyle.Fill, BackColor = Color.Black, SizeMode = PictureBoxSizeMode.Zoom };
     private readonly ComboBox _pcCameraIndex = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 100 };
     private readonly Button _pcCameraToggle = new() { Text = "Запустить веб-камеру", AutoSize = true };
@@ -92,11 +95,15 @@ internal sealed class DashboardForm : Form
 
         var cards = new TableLayoutPanel { Dock = DockStyle.Top, AutoSize = true, ColumnCount = 2, RowCount = 2, Padding = new Padding(0, 0, 0, 10) };
         cards.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
+        cards.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        cards.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        cards.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         cards.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
         cards.Controls.Add(MakeCard("СОСТОЯНИЕ", _status), 0, 0);
         cards.Controls.Add(MakeCard("ОРИЕНТАЦИЯ ГОЛОВЫ", _head), 1, 0);
         cards.Controls.Add(MakeCard("РУКИ / LANDMARKS", _hands), 0, 1);
-        cards.Controls.Add(MakeCard("АДРЕСА И ПОРТЫ", _endpoint), 1, 1);
+        cards.Controls.Add(MakeCard("ТЕЛО / POSE", _body), 1, 1);
+        cards.Controls.Add(MakeCard("АДРЕСА И ПОРТЫ", _endpoint), 0, 2);
         root.Controls.Add(cards);
 
         var cameraPanel = new TableLayoutPanel { Dock = DockStyle.Fill, RowCount = 2, ColumnCount = 1, BackColor = Color.FromArgb(27, 39, 64), Padding = new Padding(10) };
@@ -374,6 +381,23 @@ internal sealed class DashboardForm : Form
                             UpdateUi(() => _head.Text = $"x {pose.X:F2} · y {pose.Y:F2} · z {pose.Z:F2} · w {pose.W:F2}");
                             break;
                         }
+                        case ("body_pose", 1):
+                        {
+                            var points = root.GetProperty("landmarks");
+                            if (points.ValueKind != JsonValueKind.Array || (points.GetArrayLength() != 0 && points.GetArrayLength() != 33))
+                                throw new InvalidDataException("Ожидалось 33 точки тела или пустой список");
+                            var body = new PointF[points.GetArrayLength()];
+                            var index = 0;
+                            foreach (var point in points.EnumerateArray())
+                            {
+                                var x = Finite(point, "x"); var y = Finite(point, "y"); _ = Finite(point, "z");
+                                if (x is < 0f or > 1f || y is < 0f or > 1f) throw new InvalidDataException("Координаты тела должны быть в [0,1]");
+                                body[index++] = new PointF(x, y);
+                            }
+                            var snapshot = body;
+                            UpdateUi(() => { _bodySkeleton = snapshot; _body.Text = snapshot.Length == 0 ? "Тело не обнаружено" : "33 точки · скелет активен"; _camera.Invalidate(); });
+                            break;
+                        }
                         case ("hand_pose", 1):
                         {
                             var array = root.GetProperty("hands");
@@ -432,6 +456,12 @@ internal sealed class DashboardForm : Form
         {
             foreach (var (a, b) in HandBones) e.Graphics.DrawLine(bonePen, Map(hand[a]), Map(hand[b]));
             foreach (var point in hand) { var p = Map(point); var r = Math.Max(2.5f, scale * 4f); e.Graphics.FillEllipse(jointBrush, p.X-r, p.Y-r, r*2, r*2); }
+        }
+        using var bodyPen = new Pen(Color.FromArgb(230, 255, 190, 70), Math.Max(2f, scale * 4f)) { StartCap = System.Drawing.Drawing2D.LineCap.Round, EndCap = System.Drawing.Drawing2D.LineCap.Round };
+        if (_bodySkeleton.Length == 33)
+        {
+            foreach (var (a, b) in BodyBones) e.Graphics.DrawLine(bodyPen, Map(_bodySkeleton[a]), Map(_bodySkeleton[b]));
+            foreach (var point in _bodySkeleton) { var p = Map(point); var r = Math.Max(2.5f, scale * 4f); e.Graphics.FillEllipse(Brushes.Orange, p.X-r, p.Y-r, r*2, r*2); }
         }
     }
 
