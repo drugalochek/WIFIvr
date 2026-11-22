@@ -43,4 +43,5 @@
     <string name="room_profile">Профиль пользователя</string>
     <string name="room_profile_hint">Имя или название профиля, например Саша</string>
     <string name="room_tracking_support">Поддержка трекинга на устройстве</string>
+    <string name="pose_tracking_error">Ошибка отслеживания тела: %1$s</string>
 </resources>
