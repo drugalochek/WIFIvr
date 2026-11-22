@@ -136,7 +136,7 @@ class MainActivity : Activity(), SensorEventListener {
             textSize = 15f
             setTextColor(Color.WHITE)
             background = rounded(Color.rgb(48, 67, 99), 16)
-            setOnClickListener { startActivity(Intent(this@MainActivity, HandSetupActivity::class.java)) }
+            setOnClickListener { startActivity(Intent(this@MainActivity, HandSetupActivity::class.java).putExtra("pc_address", addressInput.text.toString().trim())) }
         }
         val roomButton = Button(this).apply {
             text = getString(R.string.room_setup)
