@@ -1,6 +1,6 @@
-# VRoom Android client
+# VRoom Android
 
-The first Android client milestone is implemented in Kotlin.
+The VRoom Android client is implemented in Kotlin.
 
 ## Current features
 - Reads device orientation from Android `TYPE_ROTATION_VECTOR`.
