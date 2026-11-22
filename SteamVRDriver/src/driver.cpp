@@ -266,8 +266,8 @@ public:
     }
     const char* const* GetInterfaceVersions() override { return vr::k_InterfaceVersions; }
     void RunFrame() override {
+        const auto pose = MakePose();
         if (hmd_ && hmd_->ObjectId() != vr::k_unTrackedDeviceIndexInvalid) {
-            const auto pose = MakePose();
             vr::VRServerDriverHost()->TrackedDevicePoseUpdated(
                 hmd_->ObjectId(), pose, sizeof(vr::DriverPose_t));
         }
