@@ -13,6 +13,7 @@
     <string name="streaming_to">Sending head tracking data to %1$s:9000</string>
     <string name="disconnected">Disconnected.</string>
     <string name="hand_tracking">Set up hand tracking</string>
+    <string name="room_setup">Room and play area</string>
     <string name="hand_tracking_title">Hand tracking setup</string>
     <string name="camera_starting">Starting camera…</string>
     <string name="camera_permission_needed">Camera access is needed to track your hands.</string>
@@ -25,4 +26,18 @@
     <string name="back_camera_active">Rear camera active · show up to two hands</string>
     <string name="camera_start_error">Could not start camera: %1$s</string>
     <string name="camera_frame_error">Camera frame error: %1$s</string>
+    <string name="room_title">Your play space</string>
+    <string name="room_intro">Room settings are saved on this phone. Each person can configure their own play area.</string>
+    <string name="ar_checking">Checking spatial tracking support…</string>
+    <string name="ar_supported">ARCore is supported on this device. Camera-based position tracking can be enabled.</string>
+    <string name="ar_unsupported">ARCore is not supported here. Orientation tracking can still work; position tracking needs another supported device or tracker.</string>
+    <string name="ar_error">Could not check ARCore: %1$s</string>
+    <string name="room_width">Room width (metres)</string>
+    <string name="room_length">Room length (metres)</string>
+    <string name="room_center">Room dimensions describe a rectangular safe-area draft, not a live scan of walls.</string>
+    <string name="room_save">Save play area</string>
+    <string name="room_saved">Play area saved: %1$.1f × %2$.1f m. Live boundary warnings activate when positional tracking is integrated.</string>
+    <string name="room_invalid">Enter dimensions between 1 and 20 metres.</string>
+    <string name="room_current">Saved play area: %1$.1f × %2$.1f m</string>
+    <string name="position_not_active">Position tracking is not running yet. Do not rely on this draft boundary as a collision warning.</string>
 </resources>
