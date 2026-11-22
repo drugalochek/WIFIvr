@@ -58,7 +58,7 @@ class SpatialScanActivity : Activity(), GLSurfaceView.Renderer {
     private var gridMvpHandle = 0
     private var gridColorHandle = 0
     private val vertices = floatBuffer(floatArrayOf(-1f, -1f, 1f, -1f, -1f, 1f, 1f, 1f))
-    private val rawUv = floatBuffer(floatArrayOf(0f, 0f, 1f, 0f, 0f, 1f, 1f, 1f))
+    private val rawUv = floatBuffer(floatArrayOf(1f, 0f, 0f, 0f, 1f, 1f, 0f, 1f))
     @Volatile private var scanActive = false
     @Volatile private var activityResumed = false
     @Volatile private var waitingForArInstall = false
@@ -330,6 +330,8 @@ class SpatialScanActivity : Activity(), GLSurfaceView.Renderer {
         frame.camera.getViewMatrix(view, 0)
         frame.camera.getProjectionMatrix(projection, 0, 0.1f, 100f)
         Matrix.multiplyMM(viewProjection, 0, projection, 0, view, 0)
+        // Keep AR plane overlays aligned with the horizontally corrected camera texture.
+        Matrix.scaleM(viewProjection, 0, -1f, 1f, 1f)
 
         GLES20.glUseProgram(gridProgram)
         GLES20.glEnable(GLES20.GL_BLEND)
