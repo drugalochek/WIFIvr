@@ -34,10 +34,13 @@ This checklist records observable results. Do not mark a stage complete from a s
 - [ ] Record frame rate, visible stutter, freezes, and end-to-end delay.
 - [ ] Test reconnect after closing and reopening the Android display activity.
 
-## 5. Controllers, 3D tracking, locomotion and overlay
-These stages are blocked until controller devices, calibration, and validated tracking data are implemented. Do not treat the current 2D skeleton preview as a substitute.
-- [ ] Verify two controller devices appear in SteamVR.
-- [ ] Verify controller poses and buttons in a controller test scene.
+## 5. OpenVR skeletal hands, 3D tracking, locomotion and overlay
+The driver currently registers controller-class hand endpoints only to expose OpenVR skeletal-input components. It does not provide valid tracked-device poses or trigger/grip button emulation. Do not treat hand-centred MediaPipe landmarks as room-space tracking.
+- [ ] Verify left/right skeletal input components appear in SteamVR.
+- [ ] Confirm both 31-bone motion ranges update and the hand mesh follows each finger.
+- [ ] Confirm missing hands and UDP loss clear the previous skeletal pose within 300 ms.
+- [ ] Verify left/right bone mapping and axis orientation in a dedicated skeletal-input test scene.
+- [ ] Validate camera-to-HMD calibration and wrist/root placement in the VR room.
 - [ ] Validate tracking volume and calibration repeatability.
 - [ ] Test locomotion in a controlled scene with an immediate disable path.
 - [ ] Verify overlay anchoring and desktop interaction in headset.
