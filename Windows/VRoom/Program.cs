@@ -475,6 +475,7 @@ internal sealed class DashboardForm : Form
                     driver.NoDelay = true;
                     Log("Получен канал кадров SteamVR OpenVR: 127.0.0.1:9004");
                     using var driverStream = driver.GetStream();
+                    var firstFrameLogged = false;
                     while (!token.IsCancellationRequested)
                     {
                         var header = new byte[4];
@@ -484,6 +485,11 @@ internal sealed class DashboardForm : Form
                             throw new InvalidDataException("OpenVR передал кадр недопустимого размера");
                         var frame = new byte[length];
                         if (!await ReadExactlyAsync(driverStream, frame, token)) break;
+                        if (!firstFrameLogged)
+                        {
+                            firstFrameLogged = true;
+                            Log($"Первый кадр SteamVR получен и отправляется на телефон ({length} байт).");
+                        }
                         await phoneStream.WriteAsync(header, token);
                         await phoneStream.WriteAsync(frame, token);
                     }
