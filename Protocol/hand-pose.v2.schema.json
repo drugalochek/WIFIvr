@@ -1,0 +1,62 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://wifivr.local/protocol/hand-pose.v2.schema.json",
+  "title": "VRoom hand pose packet v2",
+  "type": "object",
+  "required": ["type", "version", "timestampNs", "sequence", "hands"],
+  "properties": {
+    "type": { "const": "hand_pose" },
+    "version": { "const": 2 },
+    "timestampNs": { "type": "integer", "minimum": 0 },
+    "sequence": { "type": "integer", "minimum": 0 },
+    "hands": {
+      "type": "array", "maxItems": 2,
+      "items": {
+        "type": "object",
+        "required": ["handedness", "confidence", "gesture", "pinch", "landmarks", "worldLandmarks"],
+        "properties": {
+          "handedness": { "enum": ["Left", "Right"] },
+          "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+          "gesture": { "enum": ["pinch", "point", "fist", "open_palm", "unknown"] },
+          "pinch": { "type": "number", "minimum": 0, "maximum": 1 },
+          "landmarks": { "$ref": "#/$defs/imageLandmarks" },
+          "worldLandmarks": {
+            "description": "MediaPipe hand-centred world estimates in metres; not camera-space or room-space coordinates.",
+            "oneOf": [
+              { "$ref": "#/$defs/worldLandmarks" },
+              { "type": "array", "maxItems": 0 }
+            ]
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "$defs": {
+    "imageLandmarks": {
+      "type": "array", "minItems": 21, "maxItems": 21,
+      "items": {
+        "type": "object", "required": ["x", "y", "z"],
+        "properties": {
+          "x": { "type": "number", "minimum": 0, "maximum": 1 },
+          "y": { "type": "number", "minimum": 0, "maximum": 1 },
+          "z": { "type": "number" }
+        },
+        "additionalProperties": false
+      }
+    },
+    "worldLandmarks": {
+      "type": "array", "minItems": 21, "maxItems": 21,
+      "items": {
+        "type": "object", "required": ["x", "y", "z"],
+        "properties": {
+          "x": { "type": "number" },
+          "y": { "type": "number" },
+          "z": { "type": "number" }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}
