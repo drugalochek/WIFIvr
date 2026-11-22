@@ -276,6 +276,10 @@ private class HandOverlayView(context: android.content.Context) : View(context) 
             5 to 9, 9 to 10, 10 to 11, 11 to 12, 9 to 13, 13 to 14, 14 to 15, 15 to 16,
             13 to 17, 17 to 18, 18 to 19, 19 to 20, 0 to 17)
         val frame = cameraFrame
+        // The captured stream is reversed on this device path. Mirror the complete
+        // composition (video and landmarks together) so overlays remain registered.
+        canvas.save()
+        canvas.scale(-1f, 1f, width / 2f, 0f)
         if (stereoMode && frame != null && !frame.isRecycled) {
             val half = width / 2f
             drawEye(canvas, frame, RectF(0f, 0f, half, height.toFloat()), links)
@@ -284,6 +288,7 @@ private class HandOverlayView(context: android.content.Context) : View(context) 
         } else {
             drawHands(canvas, RectF(0f, 0f, width.toFloat(), height.toFloat()), null, links)
         }
+        canvas.restore()
     }
 
     private fun drawEye(canvas: Canvas, frame: Bitmap, destination: RectF, links: List<Pair<Int, Int>>) {
