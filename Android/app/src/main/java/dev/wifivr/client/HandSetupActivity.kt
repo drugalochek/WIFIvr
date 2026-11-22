@@ -27,6 +27,7 @@ import com.google.mediapipe.framework.image.BitmapImageBuilder
 import com.google.mediapipe.tasks.core.BaseOptions
 import com.google.mediapipe.tasks.vision.core.RunningMode
 import com.google.mediapipe.tasks.vision.handlandmarker.HandLandmarker
+import com.google.mediapipe.tasks.vision.poselandmarker.PoseLandmarker
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 
@@ -36,6 +37,7 @@ class HandSetupActivity : ComponentActivity() {
     private lateinit var status: TextView
     private lateinit var cameraExecutor: ExecutorService
     private var handLandmarker: HandLandmarker? = null
+    private var poseLandmarker: PoseLandmarker? = null
     private var lastFrameTimestamp = 0L
 
     private val permissionRequest =
@@ -79,6 +81,26 @@ class HandSetupActivity : ComponentActivity() {
                 }
                 .build()
             handLandmarker = HandLandmarker.createFromOptions(this, options)
+
+            val poseOptions = PoseLandmarker.PoseLandmarkerOptions.builder()
+                .setBaseOptions(BaseOptions.builder().setModelAssetPath("pose_landmarker_lite.task").build())
+                .setRunningMode(RunningMode.LIVE_STREAM)
+                .setNumPoses(1)
+                .setMinPoseDetectionConfidence(0.5f)
+                .setMinPosePresenceConfidence(0.5f)
+                .setMinTrackingConfidence(0.5f)
+                .setResultListener { result, _ ->
+                    val pose = result.landmarks().firstOrNull().orEmpty()
+                    val armPoints = listOf(11, 13, 15, 12, 14, 16).mapNotNull { index ->
+                        pose.getOrNull(index)?.let { it.x() to it.y() }
+                    }
+                    runOnUiThread { overlay.setArms(armPoints) }
+                }
+                .setErrorListener { error ->
+                    runOnUiThread { status.text = getString(R.string.pose_tracking_error, error.message ?: "") }
+                }
+                .build()
+            poseLandmarker = PoseLandmarker.createFromOptions(this, poseOptions)
         } catch (error: Exception) {
             status.text = getString(R.string.model_load_error, error.message ?: "")
             return
@@ -178,6 +200,7 @@ class HandSetupActivity : ComponentActivity() {
             val timestamp = maxOf(now, lastFrameTimestamp + 1)
             lastFrameTimestamp = timestamp
             handLandmarker?.detectAsync(mpImage, timestamp)
+            poseLandmarker?.detectAsync(mpImage, timestamp)
         } catch (error: Exception) {
             runOnUiThread { status.text = getString(R.string.camera_frame_error, error.message ?: "") }
         } finally {
@@ -187,6 +210,7 @@ class HandSetupActivity : ComponentActivity() {
 
     override fun onDestroy() {
         handLandmarker?.close()
+        poseLandmarker?.close()
         cameraExecutor.shutdown()
         super.onDestroy()
     }
@@ -203,6 +227,7 @@ private class HandOverlayView(context: android.content.Context) : View(context) 
         style = Paint.Style.FILL
     }
     @Volatile private var hands: List<List<Pair<Float, Float>>> = emptyList()
+    @Volatile private var arms: List<Pair<Float, Float>> = emptyList()
     @Volatile private var frameWidth = 0
     @Volatile private var frameHeight = 0
 
@@ -216,6 +241,11 @@ private class HandOverlayView(context: android.content.Context) : View(context) 
         postInvalidate()
     }
 
+    fun setArms(value: List<Pair<Float, Float>>) {
+        arms = value
+        postInvalidate()
+    }
+
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
         val connections = listOf(
@@ -226,6 +256,27 @@ private class HandOverlayView(context: android.content.Context) : View(context) 
             13 to 17, 17 to 18, 18 to 19, 19 to 20,
             0 to 17
         )
+        val fw = frameWidth.toFloat().coerceAtLeast(1f)
+        val fh = frameHeight.toFloat().coerceAtLeast(1f)
+        val scale = minOf(width / fw, height / fh)
+        val offsetX = (width - fw * scale) / 2f
+        val offsetY = (height - fh * scale) / 2f
+        fun px(point: Pair<Float, Float>) = offsetX + point.first * fw * scale
+        fun py(point: Pair<Float, Float>) = offsetY + point.second * fh * scale
+
+        // Shoulder -> elbow -> wrist. 2D image landmarks, not metric 3D tracking.
+        val armLinks = listOf(0 to 1, 1 to 2, 3 to 4, 4 to 5)
+        linePaint.color = Color.rgb(255, 190, 92)
+        linePaint.strokeWidth = 9f
+        armLinks.forEach { (a, b) ->
+            if (a < arms.size && b < arms.size) {
+                canvas.drawLine(px(arms[a]), py(arms[a]), px(arms[b]), py(arms[b]), linePaint)
+            }
+        }
+        arms.forEach { canvas.drawCircle(px(it), py(it), 10f, pointPaint) }
+        linePaint.color = Color.rgb(73, 226, 178)
+        linePaint.strokeWidth = 6f
+
         hands.forEach { hand ->
             val fw = frameWidth.toFloat().coerceAtLeast(1f)
             val fh = frameHeight.toFloat().coerceAtLeast(1f)
