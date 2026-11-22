@@ -6,11 +6,13 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.Typeface
+import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
 import android.os.SystemClock
 import android.view.Gravity
 import android.view.View
 import android.widget.FrameLayout
+import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.ComponentActivity
@@ -38,11 +40,13 @@ class HandSetupActivity : ComponentActivity() {
 
     private val permissionRequest =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-            if (granted) startCamera() else status.text = "Нужен доступ к камере для проверки рук"
+            if (granted) startCamera() else status.text = getString(R.string.camera_permission_needed)
         }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        window.statusBarColor = Color.rgb(11, 16, 32)
+        window.navigationBarColor = Color.rgb(11, 16, 32)
         cameraExecutor = Executors.newSingleThreadExecutor()
         buildScreen()
         try {
@@ -61,23 +65,22 @@ class HandSetupActivity : ComponentActivity() {
                     runOnUiThread {
                         overlay.setHands(hands)
                         status.text = if (hands.isEmpty()) {
-                            "Руки не найдены • покажи ладонь камере"
+                            getString(R.string.hands_not_found)
                         } else {
-                            val point = wrist
-                            val coordinates = if (point != null) {
-                                "x %.2f  y %.2f  z %.2f".format(point.x(), point.y(), point.z())
-                            } else "—"
-                            "Найдено рук: ${hands.size}\nЗапястье в кадре: $coordinates"
+                            val coordinates = wrist?.let {
+                                getString(R.string.wrist_coordinates, it.x(), it.y(), it.z())
+                            } ?: getString(R.string.coordinates_unavailable)
+                            getString(R.string.hands_found, hands.size, coordinates)
                         }
                     }
                 }
                 .setErrorListener { error ->
-                    runOnUiThread { status.text = "Ошибка распознавания: ${error.message}" }
+                    runOnUiThread { status.text = getString(R.string.hand_tracking_error, error.message ?: "") }
                 }
                 .build()
             handLandmarker = HandLandmarker.createFromOptions(this, options)
         } catch (error: Exception) {
-            status.text = "Не удалось загрузить модель рук: ${error.message}"
+            status.text = getString(R.string.model_load_error, error.message ?: "")
             return
         }
 
@@ -89,23 +92,49 @@ class HandSetupActivity : ComponentActivity() {
         }
     }
 
+    private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
+
     private fun buildScreen() {
-        val root = FrameLayout(this)
+        val root = FrameLayout(this).apply {
+            setBackgroundColor(Color.rgb(11, 16, 32))
+        }
         previewView = PreviewView(this).apply {
             scaleType = PreviewView.ScaleType.FIT_CENTER
         }
         overlay = HandOverlayView(this)
-        status = TextView(this).apply {
-            text = "Запуск камеры…"
-            textSize = 16f
-            setTextColor(Color.WHITE)
-            setPadding(24, 18, 24, 18)
-            setBackgroundColor(0x99000000.toInt())
-            gravity = Gravity.CENTER
+        val infoPanel = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(18), dp(14), dp(18), dp(14))
+            background = GradientDrawable().apply {
+                setColor(0xE6192740.toInt())
+                cornerRadius = dp(20).toFloat()
+                setStroke(dp(1), 0x553D597A)
+            }
+            elevation = dp(8).toFloat()
         }
+        val heading = TextView(this).apply {
+            text = getString(R.string.hand_tracking_title)
+            textSize = 17f
+            typeface = Typeface.DEFAULT_BOLD
+            setTextColor(Color.WHITE)
+        }
+        status = TextView(this).apply {
+            text = getString(R.string.camera_starting)
+            textSize = 13f
+            setTextColor(Color.rgb(184, 204, 226))
+            setPadding(0, dp(5), 0, 0)
+        }
+        infoPanel.addView(heading)
+        infoPanel.addView(status)
         root.addView(previewView, FrameLayout.LayoutParams(-1, -1))
         root.addView(overlay, FrameLayout.LayoutParams(-1, -1))
-        root.addView(status, FrameLayout.LayoutParams(-1, FrameLayout.LayoutParams.WRAP_CONTENT, Gravity.TOP))
+        root.addView(infoPanel, FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.MATCH_PARENT,
+            FrameLayout.LayoutParams.WRAP_CONTENT,
+            Gravity.TOP
+        ).apply {
+            setMargins(dp(16), dp(20), dp(16), 0)
+        })
         setContentView(root)
     }
 
@@ -119,20 +148,18 @@ class HandSetupActivity : ComponentActivity() {
             val analysis = ImageAnalysis.Builder()
                 .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
                 .build()
-            analysis.setAnalyzer(cameraExecutor) { image ->
-                analyzeFrame(image)
-            }
+            analysis.setAnalyzer(cameraExecutor) { image -> analyzeFrame(image) }
             try {
                 provider.unbindAll()
                 provider.bindToLifecycle(
                     this,
-                    CameraSelector.DEFAULT_FRONT_CAMERA,
+                    CameraSelector.DEFAULT_BACK_CAMERA,
                     preview,
                     analysis
                 )
-                status.text = "Камера включена • покажи обе ладони"
+                status.text = getString(R.string.back_camera_active)
             } catch (error: Exception) {
-                status.text = "Не удалось запустить камеру: ${error.message}"
+                status.text = getString(R.string.camera_start_error, error.message ?: "")
             }
         }, ContextCompat.getMainExecutor(this))
     }
@@ -152,7 +179,7 @@ class HandSetupActivity : ComponentActivity() {
             lastFrameTimestamp = timestamp
             handLandmarker?.detectAsync(mpImage, timestamp)
         } catch (error: Exception) {
-            runOnUiThread { status.text = "Ошибка кадра камеры: ${error.message}" }
+            runOnUiThread { status.text = getString(R.string.camera_frame_error, error.message ?: "") }
         } finally {
             image.close()
         }
@@ -167,7 +194,7 @@ class HandSetupActivity : ComponentActivity() {
 
 private class HandOverlayView(context: android.content.Context) : View(context) {
     private val linePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.GREEN
+        color = Color.rgb(73, 226, 178)
         strokeWidth = 6f
         style = Paint.Style.STROKE
     }
@@ -205,16 +232,14 @@ private class HandOverlayView(context: android.content.Context) : View(context) 
             val scale = minOf(width / fw, height / fh)
             val offsetX = (width - fw * scale) / 2f
             val offsetY = (height - fh * scale) / 2f
-            fun px(point: Pair<Float, Float>) = offsetX + (1f - point.first) * fw * scale
+            fun px(point: Pair<Float, Float>) = offsetX + point.first * fw * scale
             fun py(point: Pair<Float, Float>) = offsetY + point.second * fh * scale
             connections.forEach { (a, b) ->
                 if (a < hand.size && b < hand.size) {
                     canvas.drawLine(px(hand[a]), py(hand[a]), px(hand[b]), py(hand[b]), linePaint)
                 }
             }
-            hand.forEach { point ->
-                canvas.drawCircle(px(point), py(point), 8f, pointPaint)
-            }
+            hand.forEach { point -> canvas.drawCircle(px(point), py(point), 8f, pointPaint) }
         }
     }
 }
