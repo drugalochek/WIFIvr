@@ -47,5 +47,11 @@
     <string name="switch_to_front_camera">Переключить на фронтальную камеру</string>
     <string name="switch_to_back_camera">Переключить на заднюю камеру</string>
     <string name="front_camera_active">Фронтальная камера включена · покажи руки</string>
+    <string name="tracking_fps">Частота трекинга: %.1f FPS</string>
+    <string name="switch_to_headset_mode">Режим VR-очков</string>
+    <string name="switch_to_phone_mode">Обычный режим камеры</string>
+    <string name="headset_mode_note">Это альбомный предпросмотр камеры, пока не стереоскопический VR.</string>
+    <string name="phone_mode_note">Обычный режим камеры включён.</string>
+    <string name="room_scan_not_ready">Сканирование комнаты пока не реализовано. Этот экран только проверяет поддержку ARCore, не сканирует стены и не создаёт границы игровой зоны.</string>
     <string name="front_camera_unavailable">Фронтальная камера на этом устройстве недоступна.</string>
 </resources>
