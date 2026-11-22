@@ -9,7 +9,8 @@
 - Windows runs MoveNet Lightning locally on the selected PC webcam and detects 17 full-body keypoints.
 - Windows has a desktop dashboard for receiving head/hand telemetry and visualizing the PC-webcam skeleton.
 - Android sends a throttled JPEG camera preview to Windows over TCP port 9001.
-- The SteamVR OpenVR driver registers a virtual HMD, a display-redirect device, and left/right hand endpoints with OpenVR skeletal input components. Hand-pose v2 is relayed intact to the driver, which maps MediaPipe hand-centred landmarks into the 31-bone OpenVR hierarchy and updates both skeletal motion ranges. No trigger/grip values are synthesized. The hand-device root poses remain invalid until camera-to-HMD calibration provides room-space positions.
+- The Android **VR session** runs the phone IMU, MediaPipe hand tracking, camera uplink, and stereo-display receiver together in one Activity. This prevents the camera/hand tracker from being paused when the display activity opens.
+- The SteamVR OpenVR driver registers a virtual HMD, a display-redirect device, and left/right hand endpoints with OpenVR skeletal input components. Hand-pose v2 is relayed intact to the driver, which maps MediaPipe hand-centred landmarks into the 31-bone OpenVR hierarchy and updates both skeletal motion ranges. No trigger/grip values are synthesized. The driver now publishes HMD-relative wrist root poses using a monocular palm-size estimate (nominal 85 mm palm width and assumed camera focal scale). This is an approximate bootstrap, not calibrated depth tracking.
 - The display-redirect path captures the SteamVR compositor texture, reads it back through D3D11, JPEG-encodes it, and sends it to the Windows host over loopback TCP 9004.
 - The Windows host relays those frames over TCP 9002 to Android. The Android VR display crops the side-by-side frame into left/right eye images.
 
@@ -25,7 +26,7 @@
 - OpenXR support.
 - Validated compatibility with individual SteamVR games.
 
-The current system is an early OpenVR integration, not a finished or universally compatible VR headset. Roblox and other games only work when their own VR support permits it.
+The current system is an early OpenVR integration with an approximate monocular hand-root estimate, not a finished or universally compatible VR headset. Roblox and other games only work when their own VR support permits it.
 
 ## Tracking protocol
 
@@ -38,7 +39,7 @@ The Windows host receives UDP telemetry on port 9000 and length-prefixed JPEG st
 - TCP 9004 — local loopback stream from the OpenVR driver's compositor-frame capture to the Windows host.
 - UDP 9005 — local loopback hand-pose relay from the Windows host to the OpenVR driver. For v2, Windows forwards the complete packet; the driver consumes handedness, confidence, and 21 MediaPipe world landmarks per hand. Legacy v1 packets remain accepted by Windows but do not produce a skeletal pose.
 
-The phone clamps normalized hand x/y coordinates to [0, 1]. Landmark z is relative model depth and may be negative. Windows visualizes image-space hand landmarks; the OpenVR driver converts available hand-centred world landmarks into parent-space bone transforms, but does not infer the hand root's room-space pose from them.
+The phone clamps normalized hand x/y coordinates to [0, 1]. Landmark z is relative model depth and may be negative. Windows visualizes image-space hand landmarks. MediaPipe world landmarks remain hand-centred. `rootPosition` is a rough HMD-local wrist estimate inferred from the apparent index-to-pinky MCP span, a nominal 85 mm palm breadth, and an assumed focal scale. It is rotated by the HMD pose and submitted as the tracked hand root. Camera intrinsics, actual palm breadth, camera-to-HMD offset/orientation, and hand-depth accuracy still require calibration; expect positional error until those are measured.
 
 ## Run
 
@@ -46,7 +47,7 @@ The phone clamps normalized hand x/y coordinates to [0, 1]. Landmark z is relati
 2. Start **VRoom.exe** on Windows and press **Запустить VRoom**.
 3. Copy one of the PC's local IPv4 addresses shown in the network card.
 4. Enter that address in VRoom on Android and connect.
-5. Start the Android VR display activity when testing the PC-to-phone display path.
+5. On Android, tap **Запустить VR-сеанс**. This starts head IMU, hand tracking, camera uplink, and the incoming stereo display together.
 6. Allow VRoom through Windows Firewall on private networks only.
 
 The Windows host listens on UDP 9000, TCP 9001 (phone camera upload), and TCP 9002 (VR display download). The SteamVR driver separately listens on loopback UDP 9003 for head pose and loopback TCP 9004 for compositor-frame relay. Start VRoom Desktop before connecting the phone. Do not expose these ports to the public internet.
