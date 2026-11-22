@@ -72,3 +72,35 @@ jobs:
           path: Android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 14
+
+  build-openvr-driver:
+    name: Build SteamVR OpenVR driver
+    runs-on: windows-latest
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v6
+      - name: Install CMake
+        uses: lukka/get-cmake@latest
+      - name: Fetch OpenVR SDK headers
+        shell: pwsh
+        run: git clone --depth 1 https://github.com/ValveSoftware/openvr.git "$env:RUNNER_TEMP/openvr"
+      - name: Configure OpenVR driver
+        shell: pwsh
+        run: cmake -S SteamVRDriver -B SteamVRDriver/build -A x64 -DOPENVR_INCLUDE_DIR="$env:RUNNER_TEMP/openvr/headers"
+      - name: Compile OpenVR driver
+        run: cmake --build SteamVRDriver/build --config Release
+      - name: Package SteamVR driver
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force artifacts/driver_vroom/bin/win64 | Out-Null
+          New-Item -ItemType Directory -Force artifacts/driver_vroom/resources/settings | Out-Null
+          Copy-Item SteamVRDriver/build/Release/driver_vroom.dll artifacts/driver_vroom/bin/win64/
+          Copy-Item SteamVRDriver/driver.vrdrivermanifest artifacts/driver_vroom/
+          Copy-Item SteamVRDriver/resources/settings/default.vrsettings artifacts/driver_vroom/resources/settings/
+      - name: Upload SteamVR driver
+        uses: actions/upload-artifact@v4
+        with:
+          name: VRoom-SteamVR-driver
+          path: artifacts/driver_vroom/
+          if-no-files-found: error
+          retention-days: 14
