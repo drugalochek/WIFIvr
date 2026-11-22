@@ -35,7 +35,7 @@ This checklist records observable results. Do not mark a stage complete from a s
 - [ ] Test reconnect after closing and reopening the Android display activity.
 
 ## 5. OpenVR skeletal hands, 3D tracking, locomotion and overlay
-The driver currently registers controller-class hand endpoints only to expose OpenVR skeletal-input components. It does not provide valid tracked-device poses or trigger/grip button emulation. Do not treat hand-centred MediaPipe landmarks as room-space tracking.
+The driver registers controller-class hand endpoints with OpenVR skeletal-input components and publishes approximate HMD-relative poses from the monocular palm-width estimate. These poses are not calibrated 6DoF measurements. The driver does not emulate trigger/grip buttons.
 - [ ] Verify left/right skeletal input components appear in SteamVR.
 - [ ] Confirm both 31-bone motion ranges update and the hand mesh follows each finger.
 - [ ] Confirm the hand device poses follow wrist movement relative to the HMD. The current root uses a nominal 85 mm palm width and assumed camera focal scale; record actual position error before treating it as calibrated.
