@@ -355,50 +355,53 @@ internal sealed class DashboardForm : Form
     private async Task StreamDesktopPreviewAsync(CancellationToken token)
     {
         var listener = _displayListener!;
-        var jpegEncoder = ImageCodecInfo.GetImageEncoders().First(codec => codec.MimeType == "image/jpeg");
-        using var encoderParameters = new EncoderParameters(1);
-        encoderParameters.Param[0] = new EncoderParameter(System.Drawing.Imaging.Encoder.Quality, 52L);
         try
         {
             while (!token.IsCancellationRequested)
             {
-                using var client = await listener.AcceptTcpClientAsync(token);
-                client.NoDelay = true;
-                Log("Подключён VR-экран телефона: " + client.Client.RemoteEndPoint);
+                using var phone = await listener.AcceptTcpClientAsync(token);
+                phone.NoDelay = true;
+                Log("Подключён VR-экран телефона: " + phone.Client.RemoteEndPoint);
                 try
                 {
-                    using var stream = client.GetStream();
+                    using var phoneStream = phone.GetStream();
+                    using var driver = new TcpClient();
                     while (!token.IsCancellationRequested)
                     {
-                        var bounds = Screen.PrimaryScreen?.Bounds ?? Screen.AllScreens[0].Bounds;
-                        using var captured = new Bitmap(bounds.Width, bounds.Height, PixelFormat.Format24bppRgb);
-                        using (var graphics = Graphics.FromImage(captured))
-                            graphics.CopyFromScreen(bounds.Left, bounds.Top, 0, 0, bounds.Size, CopyPixelOperation.SourceCopy);
-                        using var scaled = new Bitmap(1280, 720, PixelFormat.Format24bppRgb);
-                        using (var graphics = Graphics.FromImage(scaled))
+                        try
                         {
-                            graphics.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.Bilinear;
-                            graphics.DrawImage(captured, 0, 0, 1280, 720);
+                            await driver.ConnectAsync(IPAddress.Loopback, 9004, token);
+                            break;
                         }
-                        using var memory = new MemoryStream();
-                        scaled.Save(memory, jpegEncoder, encoderParameters);
-                        var frame = memory.ToArray();
-                        if (frame.Length > 4_000_000) throw new InvalidDataException("Кадр экрана превышает лимит 4 МБ");
+                        catch (SocketException)
+                        {
+                            await Task.Delay(1000, token);
+                        }
+                    }
+                    driver.NoDelay = true;
+                    Log("Получен канал кадров SteamVR OpenVR: 127.0.0.1:9004");
+                    using var driverStream = driver.GetStream();
+                    while (!token.IsCancellationRequested)
+                    {
                         var header = new byte[4];
-                        BinaryPrimitives.WriteInt32BigEndian(header, frame.Length);
-                        await stream.WriteAsync(header, token);
-                        await stream.WriteAsync(frame, token);
-                        await Task.Delay(66, token);
+                        if (!await ReadExactlyAsync(driverStream, header, token)) break;
+                        var length = BinaryPrimitives.ReadInt32BigEndian(header);
+                        if (length is < 4 or > 4_000_000)
+                            throw new InvalidDataException("OpenVR передал кадр недопустимого размера");
+                        var frame = new byte[length];
+                        if (!await ReadExactlyAsync(driverStream, frame, token)) break;
+                        await phoneStream.WriteAsync(header, token);
+                        await phoneStream.WriteAsync(frame, token);
                     }
                 }
                 catch (IOException ex) { Log("VR-экран отключился: " + ex.Message); }
-                catch (SocketException ex) when (!token.IsCancellationRequested) { Log("Сеть VR-экрана: " + ex.Message); }
+                catch (SocketException ex) when (!token.IsCancellationRequested) { Log("Канал SteamVR: " + ex.Message); }
             }
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested) { }
         catch (SocketException) when (token.IsCancellationRequested) { }
         catch (ObjectDisposedException) when (token.IsCancellationRequested) { }
-        catch (Exception ex) { Log("Ошибка передачи экрана: " + ex.Message); }
+        catch (Exception ex) { Log("Ошибка передачи OpenVR-кадров: " + ex.Message); }
     }
 
     private static async Task<bool> ReadExactlyAsync(NetworkStream stream, byte[] buffer, CancellationToken token)
