@@ -59,6 +59,9 @@ class SpatialScanActivity : Activity(), GLSurfaceView.Renderer {
     private var gridPositionHandle = 0
     private var gridMvpHandle = 0
     private var gridColorHandle = 0
+    private var pointProgram = 0
+    private var pointPositionHandle = 0
+    private var pointMvpHandle = 0
     private val vertices = floatBuffer(floatArrayOf(-1f, -1f, 1f, -1f, -1f, 1f, 1f, 1f))
     private val rawUv = floatBuffer(floatArrayOf(0f, 0f, 1f, 0f, 0f, 1f, 1f, 1f))
     @Volatile private var scanActive = false
@@ -251,6 +254,22 @@ class SpatialScanActivity : Activity(), GLSurfaceView.Renderer {
         gridPositionHandle = GLES20.glGetAttribLocation(gridProgram, "aPosition")
         gridMvpHandle = GLES20.glGetUniformLocation(gridProgram, "uMvp")
         gridColorHandle = GLES20.glGetUniformLocation(gridProgram, "uColor")
+
+        // Render the accumulated depth/feature cloud over the live camera image.
+        val pointVertex = compileShader(
+            GLES20.GL_VERTEX_SHADER,
+            "attribute vec3 aPosition; uniform mat4 uMvp; void main(){ gl_Position=uMvp*vec4(aPosition,1.0); gl_PointSize=4.5; }"
+        )
+        val pointFragment = compileShader(
+            GLES20.GL_FRAGMENT_SHADER,
+            "precision mediump float; void main(){ vec2 p=gl_PointCoord-vec2(0.5); if(dot(p,p)>0.25) discard; gl_FragColor=vec4(0.15,0.95,1.0,0.92); }"
+        )
+        pointProgram = GLES20.glCreateProgram()
+        GLES20.glAttachShader(pointProgram, pointVertex)
+        GLES20.glAttachShader(pointProgram, pointFragment)
+        GLES20.glLinkProgram(pointProgram)
+        pointPositionHandle = GLES20.glGetAttribLocation(pointProgram, "aPosition")
+        pointMvpHandle = GLES20.glGetUniformLocation(pointProgram, "uMvp")
     }
 
     private fun compileShader(type: Int, source: String): Int {
@@ -283,6 +302,7 @@ class SpatialScanActivity : Activity(), GLSurfaceView.Renderer {
             frame.transformDisplayUvCoords(rawUv, transformedUv)
             transformedUv.position(0)
             drawCamera(transformedUv)
+            drawDepthPointCloud(frame)
             drawDetectedPlaneGrid(activeSession, frame)
             collectFrame(frame)
             val now = System.currentTimeMillis()
@@ -412,6 +432,48 @@ class SpatialScanActivity : Activity(), GLSurfaceView.Renderer {
             GLES20.glDrawArrays(GLES20.GL_LINES, 0, localLines.size / 3)
         }
         GLES20.glDisableVertexAttribArray(gridPositionHandle)
+        GLES20.glDisable(GLES20.GL_BLEND)
+    }
+
+    /**
+     * Draw accumulated world-space samples in camera coordinates. Previously the scanner
+     * collected thousands of depth samples but never rendered them, so the preview stayed
+     * visually empty whenever ARCore had not yet classified a plane.
+     */
+    private fun drawDepthPointCloud(frame: Frame) {
+        if (pointProgram == 0) return
+        val snapshot = synchronized(this) {
+            points.values.map { it.copyOf() }
+        }
+        if (snapshot.isEmpty()) return
+
+        val worldPositions = FloatArray(snapshot.size * 3)
+        var offset = 0
+        snapshot.forEach { point ->
+            if (point.size >= 3) {
+                worldPositions[offset++] = point[0]
+                worldPositions[offset++] = point[1]
+                worldPositions[offset++] = point[2]
+            }
+        }
+        if (offset == 0) return
+
+        val view = FloatArray(16)
+        val projection = FloatArray(16)
+        val viewProjection = FloatArray(16)
+        frame.camera.getViewMatrix(view, 0)
+        frame.camera.getProjectionMatrix(projection, 0, 0.1f, 30f)
+        Matrix.multiplyMM(viewProjection, 0, projection, 0, view, 0)
+
+        val buffer = floatBuffer(if (offset == worldPositions.size) worldPositions else worldPositions.copyOf(offset))
+        GLES20.glUseProgram(pointProgram)
+        GLES20.glUniformMatrix4fv(pointMvpHandle, 1, false, viewProjection, 0)
+        GLES20.glEnableVertexAttribArray(pointPositionHandle)
+        GLES20.glVertexAttribPointer(pointPositionHandle, 3, GLES20.GL_FLOAT, false, 0, buffer)
+        GLES20.glEnable(GLES20.GL_BLEND)
+        GLES20.glBlendFunc(GLES20.GL_SRC_ALPHA, GLES20.GL_ONE_MINUS_SRC_ALPHA)
+        GLES20.glDrawArrays(GLES20.GL_POINTS, 0, offset / 3)
+        GLES20.glDisableVertexAttribArray(pointPositionHandle)
         GLES20.glDisable(GLES20.GL_BLEND)
     }
 
