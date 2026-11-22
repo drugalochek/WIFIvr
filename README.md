@@ -9,7 +9,7 @@
 - Windows runs MoveNet Lightning locally on the selected PC webcam and detects 17 full-body keypoints.
 - Windows has a desktop dashboard for receiving head/hand telemetry and visualizing the PC-webcam skeleton.
 - Android sends a throttled JPEG camera preview to Windows over TCP port 9001.
-- The SteamVR OpenVR driver registers a virtual HMD and a separate display-redirect device.
+- The SteamVR OpenVR driver registers a virtual HMD, a display-redirect device, and left/right controller devices. The controllers currently expose an analog trigger and click from thumb/index pinch gestures; their 3D poses remain invalid until camera calibration and 3D tracking are implemented.
 - The display-redirect path captures the SteamVR compositor texture, reads it back through D3D11, JPEG-encodes it, and sends it to the Windows host over loopback TCP 9004.
 - The Windows host relays those frames over TCP 9002 to Android. The Android VR display crops the side-by-side frame into left/right eye images.
 
@@ -17,7 +17,7 @@
 
 ## What is not implemented yet
 
-- Two tracked OpenVR hand-controller devices with calibrated poses and working input components.
+- Calibrated 3D controller poses. The current controller devices only expose 2D pinch-derived trigger input; grip, pose, and reliable spatial tracking are not yet implemented.
 - Calibrated 3D body/hand tracking. MoveNet output from one PC webcam is 2D image-space keypoints only.
 - Reliable 6DoF head position. The phone IMU supplies orientation, not absolute position.
 - Working arm-swing or walk-in-place locomotion injected into SteamVR.
@@ -36,6 +36,7 @@ The Windows host receives UDP telemetry on port 9000 and length-prefixed JPEG st
 - TCP 9001 — JPEG camera frames from the Android phone, each prefixed by a 4-byte big-endian frame length.
 - TCP 9002 — side-by-side SteamVR compositor frames relayed from the Windows host to Android.
 - TCP 9004 — local loopback stream from the OpenVR driver's compositor-frame capture to the Windows host.
+- UDP 9005 — local loopback hand-input relay from the Windows host to the OpenVR driver. The current payload contains left/right pinch values; -1 means that hand is not detected.
 
 The phone clamps normalized hand x/y coordinates to [0, 1]. Landmark z is relative model depth and may be negative. The receiver currently visualizes hand landmarks; it does not infer room-space controller poses from them.
 
