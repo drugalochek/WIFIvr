@@ -40,4 +40,7 @@
     <string name="room_invalid">Enter dimensions between 1 and 20 metres.</string>
     <string name="room_current">Saved play area: %1$.1f × %2$.1f m</string>
     <string name="position_not_active">Position tracking is not running yet. Do not rely on this draft boundary as a collision warning.</string>
+    <string name="room_profile">User profile</string>
+    <string name="room_profile_hint">Name or profile, e.g. Alex</string>
+    <string name="room_tracking_support">Device tracking support</string>
 </resources>
