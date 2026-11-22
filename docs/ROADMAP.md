@@ -74,7 +74,7 @@ The checkboxes below distinguish implemented code from hardware validation. A fe
 
 ## Engineering constraints
 - Keep control telemetry separate from video transport.
-- Camera landmarks are image-space points. MediaPipe world landmarks are hand-centred estimates, not calibrated camera-space or room-space positions. The skeletal driver can animate a hand-local skeleton but cannot locate its wrist in the VR room until camera-to-HMD calibration or another validated depth/position source is available.
+- Camera landmarks are image-space points. MediaPipe world landmarks are hand-centred estimates, not calibrated camera-space or room-space positions. The current driver estimates a rough HMD-relative wrist root from apparent palm width; it must not be treated as accurate room-space tracking until hand scale, camera intrinsics, and camera-to-HMD extrinsics are calibrated.
 - A phone IMU provides orientation, not reliable 6DoF position by itself.
 - A single RGB webcam's 2D pose output must not be presented as measured 3D tracking.
 - Do not inject locomotion from noisy or uncalibrated body estimates.
