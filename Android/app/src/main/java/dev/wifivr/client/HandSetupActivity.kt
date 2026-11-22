@@ -76,6 +76,7 @@ class HandSetupActivity : ComponentActivity() {
         window.statusBarColor = Color.rgb(11, 16, 32)
         window.navigationBarColor = Color.rgb(11, 16, 32)
         cameraExecutor = Executors.newSingleThreadExecutor()
+        buildScreen()
         val pcAddress = intent.getStringExtra("pc_address")?.trim().orEmpty()
         if (pcAddress.isNotEmpty()) {
             cameraExecutor.execute {
@@ -87,7 +88,6 @@ class HandSetupActivity : ComponentActivity() {
                 }
             }
         }
-        buildScreen()
         try {
             val options = HandLandmarker.HandLandmarkerOptions.builder()
                 .setBaseOptions(BaseOptions.builder().setModelAssetPath("hand_landmarker.task").build())
