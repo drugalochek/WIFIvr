@@ -1,0 +1,79 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://wifivr.local/protocol/hand-pose.v1.schema.json",
+  "title": "VRoom hand pose packet",
+  "type": "object",
+  "required": [
+    "type",
+    "version",
+    "timestampNs",
+    "sequence",
+    "hands"
+  ],
+  "properties": {
+    "type": {
+      "const": "hand_pose"
+    },
+    "version": {
+      "const": 1
+    },
+    "timestampNs": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "sequence": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "hands": {
+      "type": "array",
+      "maxItems": 2,
+      "items": {
+        "type": "object",
+        "required": [
+          "handedness",
+          "landmarks"
+        ],
+        "properties": {
+          "handedness": {
+            "enum": [
+              "Left",
+              "Right"
+            ]
+          },
+          "landmarks": {
+            "type": "array",
+            "minItems": 21,
+            "maxItems": 21,
+            "items": {
+              "type": "object",
+              "required": [
+                "x",
+                "y",
+                "z"
+              ],
+              "properties": {
+                "x": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1
+                },
+                "y": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1
+                },
+                "z": {
+                  "type": "number"
+                }
+              },
+              "additionalProperties": false
+            }
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}
