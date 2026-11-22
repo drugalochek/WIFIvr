@@ -7,6 +7,7 @@
 - Android app identity and project display name: VRoom.
 - Android reads the phone rotation vector and sends head orientation over UDP.
 - MediaPipe detects up to two hands locally on the phone and sends 21 landmarks per hand to the PC.
+- Windows runs MoveNet Lightning locally on the selected PC webcam and detects 17 full-body keypoints; the phone camera is no longer used for body-pose inference.
 - Windows has a desktop dashboard for receiving head/hand telemetry.
 - Android sends a throttled JPEG camera preview to Windows over TCP port 9001.
 - Windows displays the incoming phone camera stream alongside tracking telemetry.
@@ -58,7 +59,7 @@ Open the repository's Actions tab, select the latest successful **Build VRoom** 
 
 ## VRoom Desktop features
 
-The Windows desktop application has tabs for the phone camera stream, an optional PC webcam preview, and VR/motion profile settings. The PC webcam tab currently captures and displays a selected local camera; full-body pose estimation and joint streaming are not implemented yet.
+The Windows desktop application has tabs for the phone camera stream, PC webcam body tracking, and VR/motion profile settings. The PC webcam tab runs MoveNet SinglePose Lightning through ONNX Runtime, draws the 17 detected body keypoints over the webcam preview, and reports detection confidence. The model is downloaded on first use to `%LOCALAPPDATA%\\VRoom\\models` and checked against its SHA-256 digest. Full-body pose is currently visualized in the Windows app only; calibrated room-space skeleton tracking and locomotion injection into SteamVR are not implemented yet.
 
 Overlay placement, scale, distance, locomotion mode, sensitivity, and smoothing values can be saved to `%LOCALAPPDATA%\\VRoom\\settings.json`. These are configuration profiles for the upcoming spatial overlay and motion engine, not active in-game controls until the VR runtime is connected.
 
@@ -67,4 +68,4 @@ The Android camera uplink reconnects to TCP port 9001 when VRoom Desktop becomes
 
 ## Skeleton tracking
 
-Android now runs MediaPipe Hand Landmarker and Pose Landmarker on the phone camera. It sends 21 landmarks per detected hand and up to 33 body landmarks over UDP 9000. VRoom Desktop draws the hand and body skeletons over the received phone-camera preview. This is 2D image-space visualization, not calibrated 3D room tracking. The optional PC webcam tab remains a preview-only capture path; PC-webcam body inference is not implemented yet.
+Android runs MediaPipe Hand Landmarker on the phone camera and sends 21 landmarks per detected hand over UDP 9000. Full-body pose inference is performed on the Windows PC from its selected webcam using MoveNet Lightning (17 keypoints). The PC webcam skeleton is a 2D image-space visualization, not calibrated 3D room tracking. Phone camera remains available for hand tracking and video preview.
