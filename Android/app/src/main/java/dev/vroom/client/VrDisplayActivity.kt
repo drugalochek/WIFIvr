@@ -142,16 +142,26 @@ private class StereoPreviewView(context: android.content.Context) : View(context
             return
         }
         val half = width / 2f
-        drawEye(canvas, current, RectF(0f, 0f, half, height.toFloat()))
-        drawEye(canvas, current, RectF(half, 0f, width.toFloat(), height.toFloat()))
+        drawEye(canvas, current, RectF(0f, 0f, half, height.toFloat()), 0)
+        drawEye(canvas, current, RectF(half, 0f, width.toFloat(), height.toFloat()), 1)
         canvas.drawLine(half, 0f, half, height.toFloat(), dividerPaint)
     }
 
-    private fun drawEye(canvas: Canvas, bitmap: Bitmap, target: RectF) {
-        val scale = maxOf(target.width() / bitmap.width, target.height() / bitmap.height)
-        val sourceWidth = target.width() / scale
-        val sourceHeight = target.height() / scale
-        val left = (bitmap.width - sourceWidth) / 2f
+    private fun drawEye(canvas: Canvas, bitmap: Bitmap, target: RectF, eye: Int) {
+        val eyeWidth = bitmap.width / 2
+        val eyeLeft = if (eye == 0) 0 else eyeWidth
+        val sourceAspect = eyeWidth.toFloat() / bitmap.height.toFloat()
+        val targetAspect = target.width() / target.height()
+        val sourceWidth: Float
+        val sourceHeight: Float
+        if (sourceAspect > targetAspect) {
+            sourceWidth = targetAspect * bitmap.height
+            sourceHeight = bitmap.height.toFloat()
+        } else {
+            sourceWidth = eyeWidth.toFloat()
+            sourceHeight = eyeWidth / targetAspect
+        }
+        val left = eyeLeft + (eyeWidth - sourceWidth) / 2f
         val top = (bitmap.height - sourceHeight) / 2f
         val source = Rect(left.toInt(), top.toInt(), (left + sourceWidth).toInt(), (top + sourceHeight).toInt())
         canvas.drawBitmap(bitmap, source, target, bitmapPaint)
