@@ -45,6 +45,10 @@ public:
 
     void Deactivate() override { objectId_ = vr::k_unTrackedDeviceIndexInvalid; }
     void EnterStandby() override {}
+    vr::DriverPose_t GetPose() override {
+        std::lock_guard<std::mutex> lock(poseMutex_);
+        return lastPose_;
+    }
     void* GetComponent(const char*) override { return nullptr; }
     void DebugRequest(const char*, char* response, uint32_t size) override {
         if (response && size) response[0] = '\0';
@@ -171,6 +175,10 @@ public:
         handPose.deviceIsConnected = true;
         handPose.willDriftInYaw = hmdPose.willDriftInYaw;
         handPose.shouldApplyHeadModel = false;
+        {
+            std::lock_guard<std::mutex> lock(poseMutex_);
+            lastPose_ = handPose;
+        }
         vr::VRServerDriverHost()->TrackedDevicePoseUpdated(objectId_, handPose, sizeof(vr::DriverPose_t));
     }
 
@@ -223,4 +231,6 @@ private:
     std::mutex skeletonMutex_;
     std::array<vr::VRBoneTransform_t, 31> skeletonTransforms_{};
     std::array<float, 3> rootPositionHead_{};
+    mutable std::mutex poseMutex_;
+    vr::DriverPose_t lastPose_{};
 };
