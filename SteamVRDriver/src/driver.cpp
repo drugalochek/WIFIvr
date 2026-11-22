@@ -26,8 +26,7 @@ namespace {
 class VRoomProvider;
 
 class VRoomHmd final : public vr::ITrackedDeviceServerDriver,
-                       public vr::IVRDisplayComponent,
-                       public vr::IVRVirtualDisplay {
+                       public vr::IVRDisplayComponent {
 public:
     explicit VRoomHmd(VRoomProvider* provider) : provider_(provider) {}
 
@@ -38,8 +37,6 @@ public:
         if (!name) return nullptr;
         if (std::strcmp(name, vr::IVRDisplayComponent_Version) == 0)
             return static_cast<vr::IVRDisplayComponent*>(this);
-        if (std::strcmp(name, vr::IVRVirtualDisplay_Version) == 0)
-            return static_cast<vr::IVRVirtualDisplay*>(this);
         return nullptr;
     }
     void DebugRequest(const char*, char* response, uint32_t size) override {
@@ -80,20 +77,46 @@ public:
         result->v[0] = u; result->v[1] = v; return true;
     }
 
-    void Present(const vr::PresentInfo_t* info, uint32_t size) override;
-    void WaitForPresent() override {}
-    bool GetTimeSinceLastVsync(float* seconds, uint64_t* frameCounter) override {
-        if (seconds) *seconds = 0.0f;
-        if (frameCounter) *frameCounter = presentedFrames_.load(std::memory_order_relaxed);
-        return false;
-    }
-
     uint32_t ObjectId() const { return objectId_; }
 
 private:
     VRoomProvider* provider_;
     uint32_t objectId_ = vr::k_unTrackedDeviceIndexInvalid;
-    std::atomic<uint64_t> presentedFrames_{0};
+};
+
+// OpenVR's IVRVirtualDisplay belongs to a DisplayRedirect device, not the HMD.
+// Keep tracking/display geometry on VRoomHmd and route the compositor's final
+// image through this separate redirect device.
+class VRoomDisplayRedirect final : public vr::ITrackedDeviceServerDriver,
+                                   public vr::IVRVirtualDisplay {
+public:
+    explicit VRoomDisplayRedirect(VRoomProvider* provider) : provider_(provider) {}
+
+    vr::EVRInitError Activate(uint32_t objectId) override;
+    void Deactivate() override { objectId_ = vr::k_unTrackedDeviceIndexInvalid; }
+    void EnterStandby() override {}
+    void* GetComponent(const char* name) override {
+        if (name && std::strcmp(name, vr::IVRVirtualDisplay_Version) == 0)
+            return static_cast<vr::IVRVirtualDisplay*>(this);
+        return nullptr;
+    }
+    void DebugRequest(const char*, char* response, uint32_t size) override {
+        if (response && size) response[0] = '\\0';
+    }
+    vr::DriverPose_t GetPose() override;
+
+    void Present(const vr::PresentInfo_t* info, uint32_t size) override;
+    void WaitForPresent() override;
+    bool GetTimeSinceLastVsync(float* seconds, uint64_t* frameCounter) override;
+
+private:
+    VRoomProvider* provider_;
+    uint32_t objectId_ = vr::k_unTrackedDeviceIndexInvalid;
+    std::mutex presentMutex_;
+    vr::SharedTextureHandle_t pendingHandle_ = INVALID_SHARED_TEXTURE_HANDLE;
+    bool hasPendingFrame_ = false;
+    std::chrono::steady_clock::time_point lastVsync_ = std::chrono::steady_clock::now();
+    uint64_t vsyncCounter_ = 0;
 };
 
 class VRoomProvider final : public vr::IServerTrackedDeviceProvider {
@@ -150,7 +173,13 @@ public:
             vr::VRDriverLog()->Log("VRoom: SteamVR rejected HMD registration");
             return vr::VRInitError_Driver_Unknown;
         }
-        vr::VRDriverLog()->Log("VRoom: virtual HMD registered; waiting for phone IMU on local UDP 9003");
+        displayRedirect_ = std::make_unique<VRoomDisplayRedirect>(this);
+        if (!vr::VRServerDriverHost()->TrackedDeviceAdded(
+                "VRoom_Display_001", vr::TrackedDeviceClass_DisplayRedirect, displayRedirect_.get())) {
+            vr::VRDriverLog()->Log("VRoom: SteamVR rejected display redirect registration");
+            return vr::VRInitError_Driver_Unknown;
+        }
+        vr::VRDriverLog()->Log("VRoom: virtual HMD and display redirect registered");
         return vr::VRInitError_None;
     }
 
@@ -167,6 +196,7 @@ public:
         }
         if (receiver_.joinable()) receiver_.join();
         if (frameThread_.joinable()) frameThread_.join();
+        displayRedirect_.reset();
         hmd_.reset();
         d3dContext_.Reset();
         d3dDevice_.Reset();
@@ -378,6 +408,7 @@ private:
     }
 
     std::unique_ptr<VRoomHmd> hmd_;
+    std::unique_ptr<VRoomDisplayRedirect> displayRedirect_;
     Microsoft::WRL::ComPtr<ID3D11Device> d3dDevice_;
     Microsoft::WRL::ComPtr<ID3D11DeviceContext> d3dContext_;
     SOCKET socket_ = INVALID_SOCKET;
@@ -394,14 +425,61 @@ private:
     bool winsockReady_ = false;
 };
 
-void VRoomHmd::Present(const vr::PresentInfo_t* info, uint32_t size) {
-    // The callback runs on SteamVR's presentation path. GPU readback plus JPEG
-    // encoding is synchronous, so doing it for every compositor frame can
-    // stall the virtual-display worker and make SteamVR terminate it.
-    // This is only a transport preview: cap capture to roughly 10 FPS.
-    const uint64_t frame = presentedFrames_.fetch_add(1, std::memory_order_relaxed);
-    if (info && size >= sizeof(vr::PresentInfo_t) && (frame % 7u) == 0u)
-        provider_->SubmitFrame(info->backbufferTextureHandle);
+vr::EVRInitError VRoomDisplayRedirect::Activate(uint32_t objectId) {
+    objectId_ = objectId;
+    auto* properties = vr::VRProperties();
+    const auto container = properties->TrackedDeviceToPropertyContainer(objectId);
+    properties->SetStringProperty(container, vr::Prop_TrackingSystemName_String, "VRoom");
+    properties->SetStringProperty(container, vr::Prop_ModelNumber_String, "VRoom Wireless Display");
+    properties->SetStringProperty(container, vr::Prop_SerialNumber_String, "VRoom_Display_001");
+    properties->SetStringProperty(container, vr::Prop_ManufacturerName_String, "VRoom");
+    vr::VRDriverLog()->Log("VRoom: display redirect activated");
+    return vr::VRInitError_None;
+}
+
+vr::DriverPose_t VRoomDisplayRedirect::GetPose() {
+    vr::DriverPose_t pose{};
+    pose.qWorldFromDriverRotation = {1.0, 0.0, 0.0, 0.0};
+    pose.qDriverFromHeadRotation = {1.0, 0.0, 0.0, 0.0};
+    pose.qRotation = {1.0, 0.0, 0.0, 0.0};
+    pose.result = vr::TrackingResult_Uninitialized;
+    pose.poseIsValid = false;
+    pose.deviceIsConnected = true;
+    return pose;
+}
+
+void VRoomDisplayRedirect::Present(const vr::PresentInfo_t* info, uint32_t size) {
+    if (!info || size < sizeof(vr::PresentInfo_t)) return;
+    // Per OpenVR's contract, Present must queue work and return quickly.
+    // The potentially blocking GPU readback/JPEG encode happens in WaitForPresent.
+    std::lock_guard<std::mutex> lock(presentMutex_);
+    pendingHandle_ = info->backbufferTextureHandle;
+    hasPendingFrame_ = pendingHandle_ != INVALID_SHARED_TEXTURE_HANDLE;
+}
+
+void VRoomDisplayRedirect::WaitForPresent() {
+    vr::SharedTextureHandle_t handle = INVALID_SHARED_TEXTURE_HANDLE;
+    {
+        std::lock_guard<std::mutex> lock(presentMutex_);
+        if (hasPendingFrame_) handle = pendingHandle_;
+        hasPendingFrame_ = false;
+    }
+    if (handle != INVALID_SHARED_TEXTURE_HANDLE)
+        provider_->SubmitFrame(handle);
+
+    std::lock_guard<std::mutex> lock(presentMutex_);
+    lastVsync_ = std::chrono::steady_clock::now();
+    ++vsyncCounter_;
+}
+
+bool VRoomDisplayRedirect::GetTimeSinceLastVsync(float* seconds, uint64_t* frameCounter) {
+    std::lock_guard<std::mutex> lock(presentMutex_);
+    if (seconds) {
+        *seconds = std::chrono::duration<float>(
+            std::chrono::steady_clock::now() - lastVsync_).count();
+    }
+    if (frameCounter) *frameCounter = vsyncCounter_;
+    return true;
 }
 
 vr::EVRInitError VRoomHmd::Activate(uint32_t objectId) {
