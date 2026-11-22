@@ -69,6 +69,10 @@ class HandSetupActivity : ComponentActivity() {
     @Volatile private var handDestination: InetAddress? = null
     @Volatile private var handSocket: DatagramSocket? = null
     private val handSequence = AtomicLong(0)
+    // EMA filters are keyed by handedness and landmark index.
+    private val smoothedHands = mutableMapOf<String, MutableList<FloatArray>>()
+    private val smoothedWorldHands = mutableMapOf<String, MutableList<FloatArray>>()
+    private val handSmoothingAlpha = 0.42f
     private val cameraStreamExecutor = Executors.newSingleThreadExecutor()
     private val cameraConnectionExecutor = Executors.newSingleThreadExecutor()
     @Volatile private var cameraConnectionRunning = true
@@ -292,30 +296,90 @@ class HandSetupActivity : ComponentActivity() {
         val socket = handSocket ?: return
         try {
             val handsJson = JSONArray()
+            val seenSides = mutableSetOf<String>()
             result.landmarks().forEachIndexed { index, landmarks ->
-                val handedness = result.handedness().getOrNull(index)?.firstOrNull()?.categoryName()
-                    ?: return@forEachIndexed
+                val category = result.handedness().getOrNull(index)?.firstOrNull()
+                val handedness = category?.categoryName() ?: return@forEachIndexed
                 if (handedness != "Left" && handedness != "Right") return@forEachIndexed
+                seenSides.add(handedness)
+                if (landmarks.size != 21) return@forEachIndexed
 
-                val points = JSONArray()
-                landmarks.forEach { point ->
-                    points.put(JSONObject()
-                        // MediaPipe may return landmarks just outside the image rectangle.
-                        // Clamp image-space axes so the wire protocol stays normalized.
-                        .put("x", point.x().coerceIn(0f, 1f).toDouble())
-                        .put("y", point.y().coerceIn(0f, 1f).toDouble())
-                        .put("z", point.z().toDouble()))
+                val previous = smoothedHands[handedness]
+                val filtered = landmarks.mapIndexed { pointIndex, point ->
+                    val raw = floatArrayOf(point.x(), point.y(), point.z())
+                    val old = previous?.getOrNull(pointIndex)
+                    if (old == null) raw else floatArrayOf(
+                        old[0] + handSmoothingAlpha * (raw[0] - old[0]),
+                        old[1] + handSmoothingAlpha * (raw[1] - old[1]),
+                        old[2] + handSmoothingAlpha * (raw[2] - old[2])
+                    )
                 }
-                if (points.length() == 21) {
-                    handsJson.put(JSONObject()
-                        .put("handedness", handedness)
-                        .put("landmarks", points))
+                smoothedHands[handedness] = filtered.toMutableList()
+
+                val imagePoints = JSONArray()
+                filtered.forEach { point ->
+                    imagePoints.put(JSONObject()
+                        .put("x", point[0].coerceIn(0f, 1f).toDouble())
+                        .put("y", point[1].coerceIn(0f, 1f).toDouble())
+                        .put("z", point[2].toDouble()))
                 }
+
+                // MediaPipe world landmarks are hand-centred metric estimates, not camera- or room-space positions.
+                val worldPoints = JSONArray()
+                val worldHand = result.worldLandmarks().getOrNull(index)
+                if (worldHand != null && worldHand.size == 21) {
+                    val previousWorld = smoothedWorldHands[handedness]
+                    val filteredWorld = worldHand.mapIndexed { pointIndex, point ->
+                        val raw = floatArrayOf(point.x(), point.y(), point.z())
+                        val old = previousWorld?.getOrNull(pointIndex)
+                        if (old == null) raw else floatArrayOf(
+                            old[0] + handSmoothingAlpha * (raw[0] - old[0]),
+                            old[1] + handSmoothingAlpha * (raw[1] - old[1]),
+                            old[2] + handSmoothingAlpha * (raw[2] - old[2])
+                        )
+                    }
+                    smoothedWorldHands[handedness] = filteredWorld.toMutableList()
+                    filteredWorld.forEach { point ->
+                        worldPoints.put(JSONObject()
+                            .put("x", point[0].toDouble())
+                            .put("y", point[1].toDouble())
+                            .put("z", point[2].toDouble()))
+                    }
+                } else {
+                    smoothedWorldHands.remove(handedness)
+                }
+
+                val thumb = filtered[4]
+                val indexTip = filtered[8]
+                val pinchDistance = kotlin.math.sqrt(
+                    (thumb[0] - indexTip[0]) * (thumb[0] - indexTip[0]) +
+                    (thumb[1] - indexTip[1]) * (thumb[1] - indexTip[1])
+                )
+                val pinch = ((0.22f - pinchDistance) / 0.17f).coerceIn(0f, 1f)
+                val gesture = when {
+                    pinch >= 0.75f -> "pinch"
+                    isFingerExtended(filtered, 8) && !isFingerExtended(filtered, 12) &&
+                        !isFingerExtended(filtered, 16) && !isFingerExtended(filtered, 20) -> "point"
+                    (1..4).none { isFingerExtended(filtered, it * 4) } -> "fist"
+                    (1..4).all { isFingerExtended(filtered, it * 4) } -> "open_palm"
+                    else -> "unknown"
+                }
+                handsJson.put(JSONObject()
+                    .put("handedness", handedness)
+                    .put("confidence", (category?.score() ?: 0f).coerceIn(0f, 1f).toDouble())
+                    .put("gesture", gesture)
+                    .put("pinch", pinch.toDouble())
+                    .put("landmarks", imagePoints)
+                    .put("worldLandmarks", worldPoints))
             }
+
+            // Forget a missing side immediately so reacquisition cannot blend with a stale pose.
+            smoothedHands.keys.retainAll(seenSides)
+            smoothedWorldHands.keys.retainAll(seenSides)
 
             val payload = JSONObject()
                 .put("type", "hand_pose")
-                .put("version", 1)
+                .put("version", 2)
                 .put("timestampNs", System.nanoTime())
                 .put("sequence", handSequence.getAndIncrement())
                 .put("hands", handsJson)
@@ -325,6 +389,12 @@ class HandSetupActivity : ComponentActivity() {
         } catch (_: Exception) {
             // A dropped tracking datagram is preferable to blocking camera inference.
         }
+    }
+
+    private fun isFingerExtended(points: List<FloatArray>, tipIndex: Int): Boolean {
+        val baseIndex = when (tipIndex) { 4 -> 2; 8 -> 5; 12 -> 9; 16 -> 13; else -> 17 }
+        // Image y grows downwards. This is a simple gesture heuristic, not a pose solve.
+        return points[tipIndex][1] < points[baseIndex][1] - 0.025f
     }
 
     private fun sendCameraFrame(bitmap: Bitmap) {
@@ -384,6 +454,8 @@ class HandSetupActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
+        smoothedHands.clear()
+        smoothedWorldHands.clear()
         handLandmarker?.close()
         handSocket?.close()
         handSocket = null
