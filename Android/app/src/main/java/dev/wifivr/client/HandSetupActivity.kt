@@ -68,7 +68,7 @@ class HandSetupActivity : ComponentActivity() {
                     }
                     val wrist = result.landmarks().firstOrNull()?.firstOrNull()
                     runOnUiThread {
-                        overlay.setHands(hands)
+                        overlay.updateHands(hands)
                         status.text = if (hands.isEmpty()) {
                             getString(R.string.hands_not_found)
                         } else {
@@ -97,7 +97,7 @@ class HandSetupActivity : ComponentActivity() {
                     val armPoints = listOf(11, 13, 15, 12, 14, 16).mapNotNull { index ->
                         pose.getOrNull(index)?.let { it.x() to it.y() }
                     }
-                    runOnUiThread { overlay.setArms(armPoints) }
+                    runOnUiThread { overlay.updateArms(armPoints) }
                 }
                 .setErrorListener { error ->
                     runOnUiThread { status.text = getString(R.string.pose_tracking_error, error.message ?: "") }
@@ -154,8 +154,8 @@ class HandSetupActivity : ComponentActivity() {
             isAllCaps = false
             setOnClickListener {
                 useFrontCamera = !useFrontCamera
-                overlay.setHands(emptyList())
-                overlay.setArms(emptyList())
+                overlay.updateHands(emptyList())
+                overlay.updateArms(emptyList())
                 startCamera()
             }
         }
@@ -280,12 +280,12 @@ private class HandOverlayView(context: android.content.Context) : View(context) 
         frameHeight = h
     }
 
-    fun setHands(value: List<List<Pair<Float, Float>>>) {
+    fun updateHands(value: List<List<Pair<Float, Float>>>) {
         handPoints = value
         postInvalidate()
     }
 
-    fun setArms(value: List<Pair<Float, Float>>) {
+    fun updateArms(value: List<Pair<Float, Float>>) {
         armPoints = value
         postInvalidate()
     }
