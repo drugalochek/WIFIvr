@@ -2,7 +2,10 @@ package dev.wifivr.client
 
 import android.Manifest
 import android.content.pm.PackageManager
+import android.graphics.Bitmap
 import android.graphics.Canvas
+import android.graphics.Rect
+import android.graphics.RectF
 import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.Typeface
@@ -140,6 +143,11 @@ class HandSetupActivity : ComponentActivity() {
                     View.SYSTEM_UI_FLAG_FULLSCREEN or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
                 else View.SYSTEM_UI_FLAG_VISIBLE
                 text = getString(if (headsetMode) R.string.switch_to_phone_mode else R.string.switch_to_headset_mode)
+                overlay.setStereoMode(headsetMode)
+                previewView.visibility = if (headsetMode) View.GONE else View.VISIBLE
+                (infoPanel.layoutParams as FrameLayout.LayoutParams).apply {
+                    topMargin = if (headsetMode) dp(10) else statusBarHeight() + dp(12)
+                }.also { infoPanel.layoutParams = it }
                 status.text = getString(if (headsetMode) R.string.headset_mode_note else R.string.phone_mode_note)
             }
         }
@@ -192,7 +200,7 @@ class HandSetupActivity : ComponentActivity() {
                 val mirror = android.graphics.Matrix().apply { postScale(-1f, 1f, rotated.width / 2f, rotated.height / 2f) }
                 android.graphics.Bitmap.createBitmap(rotated, 0, 0, rotated.width, rotated.height, mirror, true)
             } else rotated
-            overlay.setFrameSize(modelBitmap.width, modelBitmap.height)
+            overlay.updateFrame(modelBitmap)
             val mpImage = BitmapImageBuilder(modelBitmap).build()
             val timestamp = maxOf(SystemClock.uptimeMillis(), lastFrameTimestamp + 1)
             lastFrameTimestamp = timestamp
@@ -209,32 +217,70 @@ class HandSetupActivity : ComponentActivity() {
     }
 }
 
+
 private class HandOverlayView(context: android.content.Context) : View(context) {
     private val linePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.rgb(73, 226, 178); strokeWidth = 6f; style = Paint.Style.STROKE
+        color = Color.rgb(73, 226, 178); strokeWidth = 5f; style = Paint.Style.STROKE
     }
     private val pointPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.WHITE; style = Paint.Style.FILL }
+    private val imagePaint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
+    private val dividerPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.BLACK; strokeWidth = 3f }
     @Volatile private var handPoints: List<List<Pair<Float, Float>>> = emptyList()
-    @Volatile private var frameWidth = 0
-    @Volatile private var frameHeight = 0
-    fun setFrameSize(w: Int, h: Int) { frameWidth = w; frameHeight = h }
+    @Volatile private var cameraFrame: Bitmap? = null
+    @Volatile private var stereoMode = false
+
+    fun updateFrame(bitmap: Bitmap) { cameraFrame = bitmap; postInvalidate() }
     fun updateHands(value: List<List<Pair<Float, Float>>>) { handPoints = value; postInvalidate() }
+    fun setStereoMode(enabled: Boolean) { stereoMode = enabled; postInvalidate() }
 
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
         val links = listOf(0 to 1, 1 to 2, 2 to 3, 3 to 4, 0 to 5, 5 to 6, 6 to 7, 7 to 8,
             5 to 9, 9 to 10, 10 to 11, 11 to 12, 9 to 13, 13 to 14, 14 to 15, 15 to 16,
             13 to 17, 17 to 18, 18 to 19, 19 to 20, 0 to 17)
-        val fw = frameWidth.toFloat().coerceAtLeast(1f)
-        val fh = frameHeight.toFloat().coerceAtLeast(1f)
-        val scale = minOf(width / fw, height / fh)
-        val ox = (width - fw * scale) / 2f
-        val oy = (height - fh * scale) / 2f
-        fun px(p: Pair<Float, Float>) = ox + p.first * fw * scale
-        fun py(p: Pair<Float, Float>) = oy + p.second * fh * scale
+        val frame = cameraFrame
+        if (stereoMode && frame != null && !frame.isRecycled) {
+            val half = width / 2f
+            drawEye(canvas, frame, RectF(0f, 0f, half, height.toFloat()), links)
+            drawEye(canvas, frame, RectF(half, 0f, width.toFloat(), height.toFloat()), links)
+            canvas.drawLine(half, 0f, half, height.toFloat(), dividerPaint)
+        } else {
+            drawHands(canvas, RectF(0f, 0f, width.toFloat(), height.toFloat()), null, links)
+        }
+    }
+
+    private fun drawEye(canvas: Canvas, frame: Bitmap, destination: RectF, links: List<Pair<Int, Int>>) {
+        val targetAspect = destination.width() / destination.height().coerceAtLeast(1f)
+        val sourceAspect = frame.width.toFloat() / frame.height.toFloat()
+        val source = if (sourceAspect > targetAspect) {
+            val cropWidth = (frame.height * targetAspect).toInt().coerceAtLeast(1)
+            val left = (frame.width - cropWidth) / 2
+            Rect(left, 0, left + cropWidth, frame.height)
+        } else {
+            val cropHeight = (frame.width / targetAspect).toInt().coerceAtLeast(1)
+            val top = (frame.height - cropHeight) / 2
+            Rect(0, top, frame.width, top + cropHeight)
+        }
+        canvas.drawBitmap(frame, source, destination, imagePaint)
+        drawHands(canvas, destination, source, links)
+    }
+
+    private fun drawHands(canvas: Canvas, destination: RectF, crop: Rect?, links: List<Pair<Int, Int>>) {
+        val bitmap = cameraFrame
+        val fw = (crop?.width() ?: bitmap?.width ?: 1).toFloat().coerceAtLeast(1f)
+        val fh = (crop?.height() ?: bitmap?.height ?: 1).toFloat().coerceAtLeast(1f)
+        val left = crop?.left?.toFloat() ?: 0f
+        val top = crop?.top?.toFloat() ?: 0f
+        val scale = minOf(destination.width() / fw, destination.height() / fh)
+        val ox = destination.left + (destination.width() - fw * scale) / 2f
+        val oy = destination.top + (destination.height() - fh * scale) / 2f
+        fun px(p: Pair<Float, Float>) = ox + (p.first * (bitmap?.width ?: fw.toInt()) - left) * scale
+        fun py(p: Pair<Float, Float>) = oy + (p.second * (bitmap?.height ?: fh.toInt()) - top) * scale
         handPoints.forEach { hand ->
-            links.forEach { (a, b) -> if (a < hand.size && b < hand.size) canvas.drawLine(px(hand[a]), py(hand[a]), px(hand[b]), py(hand[b]), linePaint) }
-            hand.forEach { canvas.drawCircle(px(it), py(it), 8f, pointPaint) }
+            links.forEach { (a, b) ->
+                if (a < hand.size && b < hand.size) canvas.drawLine(px(hand[a]), py(hand[a]), px(hand[b]), py(hand[b]), linePaint)
+            }
+            hand.forEach { canvas.drawCircle(px(it), py(it), 5f, pointPaint) }
         }
     }
 }
