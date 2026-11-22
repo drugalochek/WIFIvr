@@ -43,8 +43,15 @@
     <string name="position_not_active">Позиционное отслеживание пока не запущено. Не полагайся на эту черновую границу как на защиту от столкновений.</string>
     <string name="room_profile">Профиль пользователя</string>
     <string name="room_profile_hint">Имя или название профиля, например Саша</string>
-    <string name="room_tracking_support">Поддержка трекинга на устройстве</string>
-    <string name="pose_tracking_error">Ошибка отслеживания тела: %1$s</string>
+    <string name="room_tracking_support">Сканирование пространства</string>
+    <string name="room_scan_description">ARCore в реальном времени находит горизонтальные и вертикальные поверхности и строит локальное облако 3D-точек. Медленно обойди всю зону.</string>
+    <string name="room_start_scan">Начать сканирование</string>
+    <string name="room_scanner_title">Пространственный сканер VRoom</string>
+    <string name="room_scan_move_phone">Медленно перемещай телефон по комнате. Старайся держать в кадре текстурированные поверхности.</string>
+    <string name="room_scan_stats">Найдено поверхностей: %1$d\nТочек в 3D-карте: %2$d</string>
+    <string name="room_scan_save">Сохранить скан</string>
+    <string name="room_scan_saved">Скан сохранён: %1$s\nТочек: %2$d · поверхностей: %3$d</string>
+    <string name="room_scan_error">Ошибка сканирования: %1$s</string>
     <string name="switch_to_front_camera">Переключить на фронтальную камеру</string>
     <string name="switch_to_back_camera">Переключить на заднюю камеру</string>
     <string name="front_camera_active">Фронтальная камера включена · покажи руки</string>
@@ -53,6 +60,5 @@
     <string name="switch_to_phone_mode">Обычный режим камеры</string>
     <string name="headset_mode_note">Это альбомный предпросмотр камеры, пока не стереоскопический VR.</string>
     <string name="phone_mode_note">Обычный режим камеры включён.</string>
-    <string name="room_scan_not_ready">Сканирование комнаты пока не реализовано. Этот экран только проверяет поддержку ARCore, не сканирует стены и не создаёт границы игровой зоны.</string>
     <string name="front_camera_unavailable">Фронтальная камера на этом устройстве недоступна.</string>
 </resources>
