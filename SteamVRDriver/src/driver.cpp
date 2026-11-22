@@ -80,11 +80,7 @@ public:
         result->v[0] = u; result->v[1] = v; return true;
     }
 
-    void Present(const vr::PresentInfo_t* info, uint32_t size) override {
-        if (info && size >= sizeof(vr::PresentInfo_t))
-            provider_->SubmitFrame(info->backbufferTextureHandle);
-        presentedFrames_.fetch_add(1, std::memory_order_relaxed);
-    }
+    void Present(const vr::PresentInfo_t* info, uint32_t size) override;
     void WaitForPresent() override {}
     bool GetTimeSinceLastVsync(float* seconds, uint64_t* frameCounter) override {
         if (seconds) *seconds = 0.0f;
@@ -254,7 +250,7 @@ private:
     }
 
     void SubmitFrame(vr::SharedTextureHandle_t sharedHandle) {
-        if (!d3dDevice_ || sharedHandle == vr::INVALID_SHARED_TEXTURE_HANDLE) return;
+        if (!d3dDevice_ || sharedHandle == INVALID_SHARED_TEXTURE_HANDLE) return;
         HRESULT comResult = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
         const bool uninitializeCom = SUCCEEDED(comResult);
         Microsoft::WRL::ComPtr<ID3D11Texture2D> source;
@@ -395,6 +391,12 @@ private:
     std::atomic<double> qx_{0}, qy_{0}, qz_{0}, qw_{1};
     bool winsockReady_ = false;
 };
+
+void VRoomHmd::Present(const vr::PresentInfo_t* info, uint32_t size) {
+    if (info && size >= sizeof(vr::PresentInfo_t))
+        provider_->SubmitFrame(info->backbufferTextureHandle);
+    presentedFrames_.fetch_add(1, std::memory_order_relaxed);
+}
 
 vr::EVRInitError VRoomHmd::Activate(uint32_t objectId) {
     objectId_ = objectId;
