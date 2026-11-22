@@ -1,5 +1,5 @@
 <resources>
-    <string name="app_name">Veyra</string>
+    <string name="app_name">VRoom</string>
     <string name="tagline">Wireless VR. No cables. Just move.</string>
     <string name="connection_title">Connect to your PC</string>
     <string name="connection_hint">Make sure your phone and PC are on the same Wi-Fi network.</string>
