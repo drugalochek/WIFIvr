@@ -11,6 +11,7 @@ class OpenVrSkeletonContractTests(unittest.TestCase):
         cls.header = (ROOT / "SteamVRDriver/src/controller_device.h").read_text(encoding="utf-8")
         cls.driver = (ROOT / "SteamVRDriver/src/driver.cpp").read_text(encoding="utf-8")
         cls.windows = (ROOT / "Windows/VRoom/Program.cs").read_text(encoding="utf-8")
+        cls.android = (ROOT / "Android/app/src/main/java/dev/vroom/client/HandSetupActivity.kt").read_text(encoding="utf-8")
 
     def test_standard_left_and_right_skeleton_paths(self):
         for path in ("/input/skeleton/left", "/input/skeleton/right",
@@ -37,10 +38,15 @@ class OpenVrSkeletonContractTests(unittest.TestCase):
         self.assertIn("<= 300", self.header)
         self.assertIn("ClearSkeleton()", self.driver)
 
-    def test_windows_forwards_full_v2_packet(self):
-        self.assertIn("version >= 2", self.windows)
-        self.assertIn("? packet.Buffer", self.windows)
-        self.assertIn("127.0.0.1", self.windows) if "127.0.0.1" in self.windows else self.assertIn("Loopback", self.windows)
+    def test_android_emits_smoothed_v2_world_landmarks(self):
+        self.assertIn('.put("version", 2)', self.android)
+        self.assertIn("worldLandmarks()", self.android)
+        self.assertIn("smoothedWorldHands", self.android)
+
+    def test_windows_accepts_and_relays_full_v2_packet(self):
+        self.assertIn('case ("hand_pose", 2):', self.windows)
+        self.assertIn("_handDriverRelay.SendAsync(packet.Buffer, packet.Buffer.Length", self.windows)
+        self.assertIn("IPAddress.Loopback", self.windows)
 
 
 if __name__ == "__main__":
