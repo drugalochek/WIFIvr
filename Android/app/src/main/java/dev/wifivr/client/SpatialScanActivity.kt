@@ -289,8 +289,13 @@ class SpatialScanActivity : Activity(), GLSurfaceView.Renderer {
         val activeSession = session ?: return
         try {
             if (surfaceWidth > 0 && surfaceHeight > 0) {
-                val displayRotation = glView.display?.rotation ?: Surface.ROTATION_0
-                activeSession.setDisplayGeometry(displayRotation, surfaceWidth, surfaceHeight)
+                // The regular CameraX view is upright in portrait. On this device ARCore's
+                // external camera texture is delivered upside down relative to that view.
+                // Apply a 180-degree display-geometry correction here, not a bitmap/UV-only flip:
+                // ARCore then rotates BOTH the camera background and its 3D projection together.
+                val displayRotation = glView.display?.rotation ?: windowManager.defaultDisplay.rotation
+                val arDisplayRotation = (displayRotation + Surface.ROTATION_180) % 4
+                activeSession.setDisplayGeometry(arDisplayRotation, surfaceWidth, surfaceHeight)
             }
             val frame = activeSession.update()
             lastTrackingState = frame.camera.trackingState
