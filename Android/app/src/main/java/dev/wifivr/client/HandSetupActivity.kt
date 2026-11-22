@@ -172,19 +172,27 @@ class HandSetupActivity : ComponentActivity() {
         setContentView(root)
     }
 
+    override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
+        super.onConfigurationChanged(newConfig)
+        if (::previewView.isInitialized) startCamera()
+    }
+
     private fun startCamera() {
         val providerFuture = ProcessCameraProvider.getInstance(this)
         providerFuture.addListener({
             val provider = providerFuture.get()
             // Keep a sharper 720p preview while MediaPipe processes a lighter 16:9 frame.
             // Explicitly disable front-camera mirroring so the preview matches real-world coordinates.
+            val displayRotation = previewView.display?.rotation ?: windowManager.defaultDisplay.rotation
             val previewBuilder = Preview.Builder()
                 .setTargetResolution(Size(1280, 720))
+                .setTargetRotation(displayRotation)
                 .setMirrorMode(MirrorMode.MIRROR_MODE_OFF)
             val preview = previewBuilder.build().also { it.setSurfaceProvider(previewView.surfaceProvider) }
             val selector = if (useFrontCamera) CameraSelector.DEFAULT_FRONT_CAMERA else CameraSelector.DEFAULT_BACK_CAMERA
             val analysisBuilder = ImageAnalysis.Builder()
                 .setTargetResolution(Size(640, 360))
+                .setTargetRotation(displayRotation)
                 .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
             // Ask the camera for a real 60 FPS AE range when the sensor advertises one.
             // Unsupported devices keep their native range rather than failing camera startup.
@@ -222,6 +230,8 @@ class HandSetupActivity : ComponentActivity() {
     private fun analyzeFrame(image: androidx.camera.core.ImageProxy) {
         try {
             val bitmap = image.toBitmap()
+            // CameraX rotationDegrees is relative to the use-case target rotation.
+            // Applying it exactly once keeps portrait and headset-landscape frames upright.
             val matrix = android.graphics.Matrix().apply { postRotate(image.imageInfo.rotationDegrees.toFloat()) }
             val rotated = android.graphics.Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
             // Keep the sensor image unmirrored in both phone and headset modes.
